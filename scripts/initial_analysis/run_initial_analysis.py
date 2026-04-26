@@ -3,8 +3,8 @@
 Produces:
   docs/initial_dataset_analysis/report.md         (publication report)
   docs/initial_dataset_analysis/figures/*.png     (figures, copied)
-  analysis/initial_analysis/figures/*.png         (figures, primary location)
-  analysis/initial_analysis/cache/*.parquet       (per-row LiDAR features, cached)
+  scripts/initial_analysis/figures/*.png          (figures, primary location)
+  scripts/initial_analysis/cache/*.parquet        (per-row LiDAR features, cached)
 
 The goal is descriptive: surface what the corrected dataset looks like
 across the three calibration days, what varies, what is stable, and
@@ -13,8 +13,15 @@ task.
 
 The report ends with a comparison appendix against the previous
 analysis (`docs/obsolete/initial_corrected_dataset_analysis_per_run_data/`),
-which used the per-CSV-pooled time-sync correction. The new analysis
-uses the per-day correction calibrated in `analysis/time_sync/`.
+which used the per-CSV-pooled time-sync correction. The current analysis
+uses the per-day correction calibrated in `scripts/time_sync/`.
+
+LiDAR beam-layout note: the h5 stores 2700 distance slots per scan but
+this dataset's sensor mode is **0.2°/beam over 1350 active beams**;
+slots [1350, 2700) are buffer padding. An earlier version of this
+script treated the full 2700 slots as active beams at 0.1° resolution,
+which broke `no_return_frac`, `invalid_frac`, `mean_front_mm`, and
+`min_front_mm`. See report §1a and §11.5 for the diff.
 """
 from __future__ import annotations
 from pathlib import Path
@@ -81,6 +88,21 @@ OBSOLETE_DELTA_STATS: dict[tuple[str, str], dict[str, float]] = {
 LIDAR_INVALID = 65535
 LIDAR_SENSOR_MAX_MM = 8250.0
 
+# LiDAR scan layout for this dataset.
+#
+# The h5 stores `distances` with shape (n_scans, 2700) but only the first
+# N_ACTIVE_BEAMS = 1350 slots are populated by the sensor; the rest are
+# always-zero buffer padding. The active beams cover the Leuze RSL 400's 270° FOV at
+# **0.2°** angular resolution. The sensor itself can also be configured at
+# 0.1° (giving 2700 active beams) — the storage width was sized for that
+# worst case — but this dataset was captured at 0.2°. See
+# `scripts/p0_analysis/config.py` for the long-form note and
+# `docs/p0_analysis/report.md` §3 for how the layout was discovered.
+N_BEAMS_STORAGE = 2700
+N_ACTIVE_BEAMS = 1350
+ANGLE_MIN_DEG = -135.0
+ANGLE_STEP_DEG = 0.2
+
 
 COLOR = {
     "25.02.2026": "#d95f02",
@@ -108,17 +130,22 @@ def compute_lidar_features(df: pd.DataFrame, chunk: int = 10000) -> pd.DataFrame
     """Compute scalar LiDAR features per matched row, indexed by row order in
     the joint parquet.
 
+    Operates on the **N_ACTIVE_BEAMS** active beams only (storage slots
+    [N_ACTIVE_BEAMS, N_BEAMS_STORAGE) are buffer padding and always zero —
+    excluding them is essential, otherwise no_return_frac is permanently
+    pinned at ~0.5 by the padding rather than reflecting the real scene).
+
     For each LiDAR scan (lidar_row), we compute:
       * mean_dist_mm     : mean of valid beam distances
       * min_dist_mm      : nearest valid beam
       * dist_p10_mm      : 10th percentile (robust 'minimum')
       * dist_p90_mm      : 90th percentile
-      * clutter_frac     : fraction of beams under 4 m
-      * openness_frac    : fraction of beams above 7 m
-      * no_return_frac   : fraction of beams with raw value == 0
-      * invalid_frac     : fraction of beams marked invalid (65535)
-      * mean_front_mm    : mean of beams in [-30, +30] degrees
-      * min_front_mm     : nearest beam in [-30, +30] degrees
+      * clutter_frac     : fraction of (valid) beams under 4 m
+      * openness_frac    : fraction of (valid) beams above 7 m
+      * no_return_frac   : fraction of *active* beams with raw value == 0
+      * invalid_frac     : fraction of *active* beams marked invalid (65535)
+      * mean_front_mm    : mean of valid beams in the front cone (|θ|<=30°)
+      * min_front_mm     : nearest valid beam in the front cone (|θ|<=30°)
 
     Distances are clipped at the sensor's 8250 mm max (zero-return beams
     contribute to no_return_frac but are excluded from distance averages).
@@ -136,11 +163,10 @@ def compute_lidar_features(df: pd.DataFrame, chunk: int = 10000) -> pd.DataFrame
     lidar_rows = df["lidar_row"].values.astype(np.int64)
     n = len(lidar_rows)
 
-    # Pre-compute angular indexing for each scan (the beam array is fixed
-    # length 2700, spanning -135..+135 degrees)
-    n_beams = 2700
-    angles_deg = np.linspace(-135.0, 135.0, n_beams)
-    front_mask = (angles_deg >= -30.0) & (angles_deg <= 30.0)
+    # Per-active-beam angular grid (this dataset: 0.2°/beam, 1350 beams,
+    # covering -135° to +134.8°). Front cone = |θ| <= 30°.
+    angles_deg_active = ANGLE_MIN_DEG + np.arange(N_ACTIVE_BEAMS) * ANGLE_STEP_DEG
+    front_mask_active = (angles_deg_active >= -30.0) & (angles_deg_active <= 30.0)
 
     cols = ["mean_dist_mm", "min_dist_mm", "dist_p10_mm", "dist_p90_mm",
             "clutter_frac", "openness_frac", "no_return_frac",
@@ -157,11 +183,12 @@ def compute_lidar_features(df: pd.DataFrame, chunk: int = 10000) -> pd.DataFrame
         for i0 in range(0, n, chunk):
             i1 = min(i0 + chunk, n)
             sel = sorted_rows[i0:i1]
-            # h5py supports fancy indexing but it must be sorted+unique
+            # h5py fancy indexing requires sorted+unique row indices.
             uniq, inverse = np.unique(sel, return_inverse=True)
-            block = distances[uniq, :].astype(np.uint16)  # (n_uniq, 2700)
-            block = block[inverse]                         # back to sel order
-            # Convert: sentinel and clipping
+            block_full = distances[uniq, :].astype(np.uint16)  # (n_uniq, 2700)
+            block_full = block_full[inverse]                   # back to sel order
+            # Drop the buffer-padding tail before computing any per-row stat.
+            block = block_full[:, :N_ACTIVE_BEAMS]             # (n, N_ACTIVE_BEAMS)
             inv = (block == LIDAR_INVALID)
             no_return = (block == 0)
             valid = ~inv & ~no_return
@@ -177,9 +204,10 @@ def compute_lidar_features(df: pd.DataFrame, chunk: int = 10000) -> pd.DataFrame
                 p90 = np.nanpercentile(d, 90, axis=1)
             clutter = np.nansum(d < 4000.0, axis=1) / np.maximum(ok_count, 1)
             openness = np.nansum(d > 7000.0, axis=1) / np.maximum(ok_count, 1)
-            no_ret = no_return.mean(axis=1)
-            inv_f = inv.mean(axis=1)
-            d_front = d[:, front_mask]
+            # Denominators are now N_ACTIVE_BEAMS (1350), not storage width.
+            no_ret = no_return.sum(axis=1).astype(np.float32) / N_ACTIVE_BEAMS
+            inv_f = inv.sum(axis=1).astype(np.float32) / N_ACTIVE_BEAMS
+            d_front = d[:, front_mask_active]
             mean_front = np.nanmean(d_front, axis=1)
             min_front = np.nanmin(d_front, axis=1)
 
@@ -480,7 +508,73 @@ analyses lead to the same conclusions.
 """)
 
     info["deltas"] = deltas
+
+    # ---- (5) Mapping-correction diff (LiDAR features) — STATIC APPENDIX ----
+    # The previous run of this script used an incorrect LiDAR beam-angle
+    # mapping (0.1° / 2700 active beams instead of the actual 0.2° / 1350
+    # active beams; see §1a). The numbers below were captured at the time
+    # of the fix from a snapshot of the OLD lidar_features.parquet and are
+    # baked in here so the diff persists across future re-runs.
+    lines.append(_static_mapping_correction_appendix())
     return "\n".join(lines), info
+
+
+def _static_mapping_correction_appendix() -> str:
+    """Frozen §11.5 — historical OLD vs NEW LiDAR-feature means captured at
+    the time the beam-angle mapping was corrected (0.1°/2700 → 0.2°/1350)."""
+    return """### 11.5 Mapping-correction diff (LiDAR features) — historical
+
+_Snapshot from the one-time correction of the LiDAR beam-angle mapping
+from 0.1°/2700-active-beam to the actual 0.2°/1350-active-beam layout.
+See §1a for the qualitative summary._
+
+| feature | session | old mean | new mean | Δ | note |
+|---|---|---|---|---|---|
+| mean_dist_mm | 15.03.2026 | 2951 | 2954 | +2 | unchanged (already excluded padding via valid mask) |
+| mean_dist_mm | 24.03.2026 | 2948 | 2950 | +2 | unchanged (already excluded padding via valid mask) |
+| mean_dist_mm | 25.02.2026 | 2951 | 2954 | +2 | unchanged (already excluded padding via valid mask) |
+| min_dist_mm  | 15.03.2026 | 86.00 | 86.01 | +0.00 | unchanged (real AGV-body close beams) |
+| min_dist_mm  | 24.03.2026 | 85.45 | 85.45 | +0.00 | unchanged (real AGV-body close beams) |
+| min_dist_mm  | 25.02.2026 | 85.77 | 85.77 | +0.01 | unchanged (real AGV-body close beams) |
+| dist_p10_mm  | 15.03.2026 | 138.4 | 138.7 | +0.3 | unchanged (real AGV-body close beams) |
+| dist_p10_mm  | 24.03.2026 | 138.1 | 138.4 | +0.3 | unchanged (real AGV-body close beams) |
+| dist_p10_mm  | 25.02.2026 | 139.1 | 139.5 | +0.3 | unchanged (real AGV-body close beams) |
+| dist_p90_mm  | 15.03.2026 | 6896 | 6897 | +2 | unchanged |
+| dist_p90_mm  | 24.03.2026 | 7444 | 7446 | +2 | unchanged |
+| dist_p90_mm  | 25.02.2026 | 7206 | 7208 | +2 | unchanged |
+| clutter_frac | 15.03.2026 | 0.7038 | 0.7035 | -0.0002 | unchanged (denominator was already valid-only) |
+| clutter_frac | 24.03.2026 | 0.7120 | 0.7118 | -0.0002 | unchanged (denominator was already valid-only) |
+| clutter_frac | 25.02.2026 | 0.6920 | 0.6918 | -0.0002 | unchanged (denominator was already valid-only) |
+| openness_frac | 15.03.2026 | 0.1023 | 0.1023 | +0.0001 | unchanged (denominator was already valid-only) |
+| openness_frac | 24.03.2026 | 0.1200 | 0.1201 | +0.0001 | unchanged (denominator was already valid-only) |
+| openness_frac | 25.02.2026 | 0.1161 | 0.1162 | +0.0001 | unchanged (denominator was already valid-only) |
+| no_return_frac | 15.03.2026 | 0.4996 | 0.0000 | -0.4996 | **FIXED**: was 0.5 from buffer padding; now real |
+| no_return_frac | 24.03.2026 | 0.4996 | 0.0000 | -0.4996 | **FIXED**: was 0.5 from buffer padding; now real |
+| no_return_frac | 25.02.2026 | 0.4996 | 0.0000 | -0.4996 | **FIXED**: was 0.5 from buffer padding; now real |
+| invalid_frac | 15.03.2026 | 0.0081 | 0.0162 | +0.0081 | **FIXED**: denominator was 2700 (storage), now 1350 |
+| invalid_frac | 24.03.2026 | 0.0089 | 0.0178 | +0.0089 | **FIXED**: denominator was 2700 (storage), now 1350 |
+| invalid_frac | 25.02.2026 | 0.0090 | 0.0181 | +0.0090 | **FIXED**: denominator was 2700 (storage), now 1350 |
+| mean_front_mm | 15.03.2026 | 1332 | 4969 | +3637 | **FIXED**: was right-rear sector; now true front cone |
+| mean_front_mm | 24.03.2026 | 1189 | 5760 | +4571 | **FIXED**: was right-rear sector; now true front cone |
+| mean_front_mm | 25.02.2026 | 1635 | 4903 | +3267 | **FIXED**: was right-rear sector; now true front cone |
+| min_front_mm | 15.03.2026 | 103 | 2653 | +2551 | **FIXED**: was AGV body in right-rear; now true front cone |
+| min_front_mm | 24.03.2026 | 102 | 2559 | +2458 | **FIXED**: was AGV body in right-rear; now true front cone |
+| min_front_mm | 25.02.2026 | 102 | 2237 | +2135 | **FIXED**: was AGV body in right-rear; now true front cone |
+
+**Reading the diff.** Aggregates that were already computed over a
+per-row validity mask (`mean_dist_mm`, `dist_p90_mm`, `clutter_frac`,
+`openness_frac`, and `min_dist_mm` / `dist_p10_mm`) are unchanged
+because the validity mask already NaN'd the buffer-padding zeros.
+Aggregates that took the storage width as the denominator
+(`no_return_frac`, `invalid_frac`) are corrected. Aggregates that
+selected beam indices by angle (`mean_front_mm`, `min_front_mm`)
+move drastically because the previous mapping placed the ±30° "front
+cone" over slot indices [1050, 1650], which under the actual 0.2°
+mapping correspond to body-frame angles +75° to +135° — the
+right-rear, where the AGV body is. The new `min_front_mm` ≈
+2 200–2 700 mm and `mean_front_mm` ≈ 5 000 mm are healthy genuine
+front-cone numbers and the feature is no longer 'uninformative'.
+"""
 
 
 # ---------------------------------------------------------------------------
@@ -725,16 +819,20 @@ def main():
                       "Motion-signal distributions per session_date", ncols=2)
     figs["motion_dist"] = p
 
-    # LiDAR feature distributions
-    # NB: min_front_mm and dist_p10_mm are dominated by a ~100 mm fixed
-    # AGV-body reflection (see report §1b), and no_return_frac is a
-    # geometric constant ≈ 0.50. We drop them from the headline plot
-    # but keep them in the cache for completeness.
+    # LiDAR feature distributions.
+    # NB: min_dist_mm and dist_p10_mm are dominated by ~241 active beams
+    # that hit the AGV body / housing at sub-200 mm range (see report §1a
+    # and the mask_body in scripts/p0_analysis/artifacts/agv_body_mask.npz);
+    # we drop them from the headline plot but keep them in the cache for
+    # completeness. mean_front_mm and min_front_mm now correctly cover the
+    # front cone (the previous wrong-mapping interpretation as a fixed
+    # close reflector was an artefact — see §1a).
     p = FIG_DIR / "dist_lidar.png"
     lidar_cols = [
         ("mean_dist_mm", "mean valid distance", "mm"),
         ("dist_p90_mm", "90th-pct distance", "mm"),
         ("mean_front_mm", "mean front (-30°,+30°) distance", "mm"),
+        ("min_front_mm", "min front (-30°,+30°) distance", "mm"),
         ("clutter_frac", "clutter (frac < 4 m)", ""),
         ("openness_frac", "openness (frac > 7 m)", ""),
     ]
@@ -760,13 +858,14 @@ def main():
     fig_signal_vs_speed(df, p)
     figs["signal_vs_speed"] = p
 
-    # Correlation heatmaps
-    # NB: dropped min_front_mm, dist_p10_mm, no_return_frac (constant /
-    # AGV-body-dominated; see report §1a).
+    # Correlation heatmaps.
+    # NB: dropped dist_p10_mm and no_return_frac (AGV-body-dominated /
+    # near-zero post-fix; see report §1a). min_front_mm now correctly
+    # covers the front cone and is included.
     corr_cols = [
         "signal_power", "signal_quality", "ping",
         "abs_speed",
-        "mean_dist_mm", "mean_front_mm", "dist_p90_mm",
+        "mean_dist_mm", "mean_front_mm", "min_front_mm", "dist_p90_mm",
         "clutter_frac", "openness_frac",
     ]
     p = FIG_DIR / "corr_pearson.png"
@@ -868,9 +967,9 @@ def write_report(df: pd.DataFrame, summary: pd.DataFrame,
     md = f"""# Initial analysis of the corrected joint-coverage dataset
 
 *Project: FLICS 2026 / AIDI 2026 — LiDAR-derived WiFi quality prediction.*
-Generated by `analysis/initial_analysis/run_initial_analysis.py` from
+Generated by `scripts/initial_analysis/run_initial_analysis.py` from
 `data/merged/joint_coverage.parquet` after the per-day time-sync
-calibration pipeline (see `docs/time_sync_per_day/report.md`). Replaces
+calibration pipeline (see `docs/time_sync/report.md`). Replaces
 the obsolete per-CSV-pooled analysis archived under
 `docs/obsolete/initial_corrected_dataset_analysis_per_run_data/`.
 
@@ -886,39 +985,59 @@ independent merge_asof retention re-run). Data is safe to analyse.
 
 ## 1a. Data-quality findings discovered during analysis
 
-Three LiDAR-derived features turn out to be uninformative on this dataset
-and we **drop them from the headline analysis** while keeping them in the
-cache for traceability:
+This rerun corrects two earlier interpretation errors. **The previous
+version of this report assumed the LiDAR's 2 700 distance slots were all
+active beams at 0.1° angular resolution; in fact this dataset was
+captured at 0.2° resolution, so only the first 1 350 slots carry
+returns and slots [1350, 2700) are buffer padding (always zero).**
+Aggregates that divide by the storage width or that pick beam indices by
+angle were affected; aggregates that already used a per-beam validity
+mask were not. The corrected feature definitions below apply to the
+N = 1 350 active beams only. (See `docs/p0_analysis/report.md` §3 for
+how the layout was discovered, and §11.5 of this report for the full
+before/after diff.)
 
-* **`no_return_frac` ≈ 0.4996 ± 2 × 10⁻⁵ on every scan.** Almost exactly
-  half of the 2700 beams return raw 0 ("no return") on every single
-  scan, with a standard deviation 4–5 orders of magnitude smaller than
-  the mean. This is a geometric constant (likely the rear-half of the
-  sweep range produces no returns because of the AGV body / housing /
-  the sensor's effective FOV being narrower than the 270° sweep). It
-  carries no information about the environment.
-* **`min_front_mm` ≈ 100 mm constant** (median 103 mm, std 5 mm; 0 % of
-  scans report a front-min above 200 mm). The closest beam in the
-  ±30° front cone is reading a fixed reflector at ~ 10 cm from the
-  LiDAR every scan — almost certainly part of the AGV's own bumper /
-  housing within the sensor field of view. The same effect explains
-  the very tight `dist_p10_mm` distribution at 134–142 mm and the
-  global `min_dist_mm` at ~ 86 mm.
-* **`dist_p10_mm` and `min_dist_mm`** are similarly dominated by that
-  fixed close reflector and convey almost no scene-level signal.
+### Features dominated by the AGV body — still drop from headline
 
-Useful LiDAR features that *do* vary with the environment:
+* **`min_dist_mm` ≈ 86 mm  and  `dist_p10_mm` ≈ 138 mm** on every scan,
+  with stds of ~ 5–6 mm and ~ 2 mm respectively. These come from a
+  fixed group of ≈ 241 active beams that hit the AGV's own body /
+  housing at sub-200 mm range (P0.3 identified them as `mask_body`).
+  These features carry essentially no scene information; we drop them
+  from the headline analysis.
 
-* `mean_dist_mm` (full sweep)
-* `mean_front_mm` (front cone only, with the fixed reflector excluded
-  as part of the average)
-* `dist_p90_mm` (the far-end of the visible beams; tracks "openness")
+### Features whose interpretation changed after the fix
+
+* **`no_return_frac` is now ≈ 0**, not 0.5. The previous "≈ 0.5 ±
+  2×10⁻⁵" reading was the buffer padding (every padded slot reads 0,
+  which the old code denominated against 2 700 instead of 1 350). With
+  active beams only, true no-return events are rare on this dataset.
+* **`invalid_frac` ≈ 0.015–0.018**, roughly double its previously
+  reported value (~ 0.008). Same root cause: the old denominator was
+  the storage width, not the active-beam count.
+* **`mean_front_mm` ≈ 5 000 mm**, not ~ 1 200 mm; **`min_front_mm` ≈
+  2 200–2 700 mm**, not ~ 100 mm. The previous values were *not* the
+  front cone — they were the slice of slot indices [1050, 1650] which,
+  under the wrong 0.1° mapping, looked like ±30° from forward but
+  under the actual 0.2° mapping correspond to body-frame angles
+  +75° to +135° (the right-rear, where the AGV body intrudes). With
+  the correct active-beam angular grid (θ_i = -135° + i · 0.2° for
+  i ∈ [0, 1350)), the front cone is healthy and informative — `min_front_mm`
+  varies session-by-session and across cells, and `mean_front_mm` has a
+  std of ~ 1 000–1 600 mm (was ~ 5 mm under the wrong mapping).
+
+### Useful LiDAR features for the headline analysis
+
+* `mean_dist_mm` (mean over valid active beams)
+* `mean_front_mm` (now correctly the front cone; previously broken)
+* `dist_p90_mm` (far-end of the visible beams; tracks "openness")
 * `clutter_frac`, `openness_frac` (interpretable summary scalars)
 
-The analysis below uses these "useful" features. We add a **follow-up
-recommendation** in §10 to characterise the AGV-body LiDAR mask
-explicitly so future feature engineering can mask out the fixed
-reflector beams beam-by-beam rather than relying on aggregates.
+The follow-up recommendation in §10 — **characterise the AGV-body LiDAR
+mask explicitly** — has since been completed in Phase 0
+(`scripts/p0_analysis/run_p0_3.py`); the mask is at
+`scripts/p0_analysis/artifacts/agv_body_mask.npz` and Phase 1 feature
+engineering should consume it directly.
 
 ## 1. Per-session summary
 
@@ -979,11 +1098,11 @@ Take-aways:
 ![LiDAR feature distributions]({_img(figs['lidar_dist'])})
 
 The LiDAR features quantify the visible scene at each scan. `mean_dist_mm`
-and `dist_p10_mm` describe how clutter-rich the immediate environment is;
+describes how open the immediate environment is on average;
 `clutter_frac` and `openness_frac` are interpretable summary scalars
-suitable as model features. The `no_return_frac` distribution shows the
-typical fraction of beams that fail to return (likely glass / mirror-like
-surfaces, or distances above the 8.25 m sensor max).
+suitable as model features. `mean_front_mm` (now the actual front cone
+after the §1a correction) tracks the unobstructed forward distance —
+useful for predicting line-of-sight to the AP.
 
 The three sessions show **clearly different LiDAR scene statistics** —
 which is consistent with the AGV traversing different parts of the lab on
@@ -1100,13 +1219,14 @@ modelling directions look most promising for AIDI 2026:
   the scene at slightly different (x,y) within the matching window. For
   models that average features over a short window, use
   `lidar_ts_corr` to do the windowing.
-* **Characterise the AGV-body LiDAR mask explicitly.** The fixed ~ 100
-  mm front reflector and the ~ 50 % systematic no-return fraction
-  (see §1a) suggest a sizeable portion of the LiDAR sweep is hitting
-  the AGV's own body / housing. Computing a per-beam-angle "always-zero
-  or always-very-close" mask from a stationary baseline scan would
-  let future feature engineering exclude those angles before
-  aggregating. Until that mask exists, prefer aggregate features
+* **AGV-body LiDAR mask — DONE in Phase 0.** This rerun's §1a confirms
+  the residual close-range AGV-body returns on ~ 241 active beams
+  (`min_dist_mm` ≈ 86 mm and `dist_p10_mm` ≈ 138 mm both come from
+  this group). The explicit per-beam mask
+  (`scripts/p0_analysis/artifacts/agv_body_mask.npz`) was produced by
+  P0.3 and combines `mask_body` (those 241 close-pinned beams) with
+  `mask_pad` (the 1 350 padding slots). Phase 1 feature engineering
+  should consume it directly. Until then, prefer aggregate features
   (`mean_dist_mm`, `mean_front_mm`, `clutter_frac`, `openness_frac`,
   `dist_p90_mm`) over instantaneous-min features.
 
@@ -1114,7 +1234,7 @@ modelling directions look most promising for AIDI 2026:
 ## 12. Reproducibility
 
 ```bash
-.venv/Scripts/python.exe -m analysis.initial_analysis.run_initial_analysis
+.venv/Scripts/python.exe -m scripts.initial_analysis.run_initial_analysis
 ```
 
 Outputs:
@@ -1122,10 +1242,10 @@ Outputs:
 * `docs/initial_dataset_analysis/report.md`  (this file)
 * `docs/initial_dataset_analysis/figures/*.png`  (figures, copied so the
   report is self-contained when shipped from the docs/ tree)
-* `analysis/initial_analysis/figures/*.png`  (figures, primary location)
-* `analysis/initial_analysis/cache/lidar_features.parquet`  (per-row
+* `scripts/initial_analysis/figures/*.png`  (figures, primary location)
+* `scripts/initial_analysis/cache/lidar_features.parquet`  (per-row
   LiDAR features; cached for fast re-render)
-* `analysis/initial_analysis/session_summary.csv`
+* `scripts/initial_analysis/session_summary.csv`
 """
     REPORT.write_text(md, encoding="utf-8")
 
