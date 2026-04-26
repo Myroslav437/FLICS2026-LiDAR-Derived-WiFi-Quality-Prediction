@@ -1,0 +1,178 @@
+Explainable WiFi Link Quality Prediction for Industrial AGVs
+Using LiDAR-Derived Environmental Context
+Detailed Research Methodology & Experimental Design
+Target: AIDI 2026 Workshop @ FLICS 2026, Valencia, Spain
+Submission Deadline: 28 April 2026  |  Workshop: 9–12 June 2026
+1. Data Structure and Collection Campaigns
+The experimental data consists of a set of independent collection runs. Each run is characterized by two parameters: the AGV route (physical path through the facility) and the hotspot configuration (how many WiFi access points are monitored, and which ones). Critically, these parameters vary independently across runs, producing a heterogeneous dataset.
+1.1. Run-Based Data Organization
+Each collection run captures all three synchronized data streams (LiDAR, WiFi, AGV telemetry) while the AGV traverses a specific route. The WiFi stream records metrics for whichever hotspot(s) the system is configured to monitor during that run. This means:
+Single-hotspot runs: WiFi metrics (signal_power, signal_noise, signal_quality, ping, wifi_state) are recorded for one access point. The model sees one AGV–AP link per timestep.
+Multi-hotspot runs: WiFi metrics are recorded for multiple access points simultaneously. The model sees N AGV–AP links per timestep, each with its own quality measurement. This is richer data: the same physical location and LiDAR scan is paired with multiple WiFi observations from different APs.
+Key implication: The same route may appear in different runs with different hotspot configurations. A route may be traversed once with 1 hotspot and again with 3 hotspots. Conversely, different routes may share the same hotspot configuration. This heterogeneity is a strength: it enables the model to disentangle environment effects (route geometry) from network effects (hotspot configuration).
+1.2. Routes (Scenarios)
+Each route defines a physical trajectory through the facility, exposing the AGV to different environmental conditions:
+Different corridor widths, open areas, obstacle densities along the path
+Different navigation behaviors (straight segments, turns, stops, speed profiles)
+Varying load conditions (weight on strain gauges) and energy consumption profiles
+Varying proximity and angular relationships to different hotspot positions
+1.3. Resulting Data Matrix
+The actual dataset will be a collection of runs, each described by a (route, hotspot_config) pair. Example anticipated structure:
+Note on overlapping routes: When the same route appears with different hotspot configurations (e.g., R1 and R3 both use Route A), this creates a natural controlled experiment: the physical environment and AGV trajectory are identical, only the observed WiFi links differ. This is analytically powerful for isolating geometric vs. network effects.
+1.4. Per-Link Data Representation
+Regardless of how many hotspots a run monitors, the model operates on individual AGV–hotspot links. Each timestep in a multi-hotspot run produces N training samples (one per hotspot), all sharing the same LiDAR and telemetry features but with different hotspot-relative features and different WiFi target values. A single-hotspot run produces one sample per timestep. This “per-link” representation ensures the model architecture is identical for all runs, regardless of hotspot count.
+2. Feature Engineering Pipeline
+All features are computed per synchronized timestep after aligning the three data streams. LiDAR operates at approximately 25 Hz; telemetry and WiFi at lower rates. Alignment is performed by nearest-timestamp matching, downsampling LiDAR to the telemetry rate.
+2.1. LiDAR-Derived Geometric Features (Distance-Only)
+The 2D LiDAR provides 2700 distance measurements across 270° (angular resolution 0.1°, max range 8.25 m). Features are extracted at two levels:
+2.1.1. Sector-Level Features
+The scan is divided into K angular sectors (e.g., K = 8 sectors of ~33.75° each, or K = 6 sectors of 45°). For each sector s:
+mean_dist(s): Mean distance of beams in sector s. Low values indicate nearby obstacles.
+var_dist(s): Variance of distances in sector s. High variance suggests mixed environment (some obstacles, some open space).
+obstacle_count(s): Number of beams returning below a configurable threshold (e.g., 2 m). Captures obstacle density.
+openness(s): Fraction of beams at or near maximum range (> 7.5 m). Indicates open space in that direction.
+min_dist(s): Minimum distance in sector. Captures closest obstacle proximity.
+2.1.2. Aggregate Scan Features
+corridor_index: Ratio of mean lateral distances (left sectors vs. right sectors) to mean frontal distance. High values suggest corridor; low values suggest open area.
+symmetry_index: Absolute difference between left-side and right-side mean distances, normalized. Asymmetry may indicate walls on one side only.
+clutter_score: Overall fraction of beams below a mid-range threshold (e.g., 4 m). General measure of environmental complexity.
+scan_entropy: Shannon entropy of the binned distance histogram. High entropy = heterogeneous environment.
+2.2. AGV Telemetry Features
+Extracted directly from the Frame 6000 data:
+2.2.1. Navigation State
+position_x, position_y: AGV coordinates from natural navigation (X-coordinate, Y-coordinate).
+heading: AGV heading angle from navigation system.
+speed: Current AGV speed from navigation signals.
+nav_segment: Current navigation segment ID (categorical). Captures which part of the route the AGV is on.
+nav_confidence: Position confidence from natural navigation. Low confidence may correlate with areas where WiFi is also problematic.
+on_route_status: Whether AGV is on its planned route.
+2.2.2. Dynamic State
+speed_left, speed_right: Individual wheel speeds (ActualSpeed_L, ActualSpeed_R). Difference indicates turning.
+is_turning: Derived binary: |speed_left − speed_right| > threshold. Turns change antenna orientation relative to hotspot.
+is_stopped: Derived binary from speed = 0 or brake lock state.
+inclination_x, inclination_y: From inclination sensors. Floor unevenness may affect antenna orientation.
+2.2.3. Operational Context
+battery_level: Battery value from energy signals.
+power_consumption: Momentary power consumption. High draw may indicate electromagnetic interference.
+load_weight: Mean of the four strain gauge weights. Payload mass may physically shift antenna position or change chassis reflections.
+safety_front_warning: Front scanner warning zone active flag. Indicates proximity to obstacles/people.
+2.3. Hotspot-Relative Features
+These are the key features enabling the model to generalize across hotspots. They encode the geometric relationship between the AGV and the active hotspot, using the AGV’s own position and the known hotspot coordinates:
+dist_to_hotspot: Euclidean distance from AGV position (x, y) to the known hotspot position. The primary predictor for signal attenuation.
+angle_to_hotspot: Bearing angle from AGV to hotspot, relative to AGV heading. Captures antenna directionality effects — signal may differ when hotspot is behind vs. in front of the AGV.
+los_blockage_ratio: From the LiDAR scan: in the angular sector pointing toward the hotspot, what fraction of beams return below the hotspot distance? High ratio = likely line-of-sight blockage. This is the critical feature linking LiDAR geometry to WiFi prediction.
+path_obstacle_density: Average obstacle count across all sectors between AGV forward direction and hotspot direction. Captures environmental clutter in the propagation path.
+hotspot_id: Categorical identifier (A or B). Allows the model to learn any hotspot-specific offsets (e.g., different antenna characteristics, different mounting heights) while sharing the general geometric relationship.
+Design principle: With hotspot_id as a feature, the model can learn both shared relationships (geometry → signal) and hotspot-specific offsets. Without hotspot_id, the model is forced to rely purely on geometric/relative features, testing whether the learned WiFi–environment relationship is truly hotspot-agnostic. Both variants are tested in the ablation study.
+3. Target Variable Definition
+The WiFi signal quality from the MikroTik router (Frame 7000) can be formulated as either a regression or classification target:
+3.1. Regression Target
+Predict continuous signal_quality (or signal_power, or signal-to-noise ratio derived from signal_power − signal_noise). RMSE and MAE are evaluation metrics.
+3.2. Classification Target (Recommended for Workshop Paper)
+Discretize signal quality into operational categories based on domain-meaningful thresholds:
+Thresholds T_high and T_low are determined empirically from the data distribution (e.g., 75th and 25th percentiles, or domain-specific thresholds if known). Classification is preferred for the workshop paper because: (a) it produces more interpretable XAI explanations (“why is this location classified as Degraded?”), (b) it is more robust to WiFi measurement noise, and (c) it aligns with actionable operator decisions.
+Ping as secondary target: The ping metric can serve as an alternative or complementary target, directly capturing communication latency. A dual-target setup (predict quality class + predict latency) would strengthen the paper if space permits.
+4. Model Architecture
+4.1. Primary Model: Gradient Boosted Trees
+XGBoost or LightGBM on the full tabular feature vector. Advantages for this study: native handling of mixed feature types (continuous + categorical), built-in feature importance, exact TreeSHAP computation, fast training for iterative experimentation, and strong performance on moderate-size tabular datasets.
+Input: Feature vector x = [LiDAR geometric features | telemetry features | hotspot-relative features] for a single timestep. Dimensionality: approximately 40–60 features depending on the number of sectors K and derived features included.
+Output: WiFi quality class (Good / Degraded / Critical) or continuous quality score.
+4.2. Secondary Model: Temporal Model (Optional Extension)
+A lightweight 1D-CNN or LSTM operating on sliding windows of W timesteps (e.g., W = 10–30, corresponding to 1–3 seconds). This captures temporal dynamics: signal trending downward, AGV decelerating before a turn, etc. KernelSHAP or attention weights provide temporal explanations. Include only if the temporal model provides meaningful improvement over the tabular model.
+5. Experimental Design
+The heterogeneous run structure (varying routes × varying hotspot configurations) enables a rich set of evaluation protocols. Each tests a different dimension of generalization:
+5.1. Protocol 1: Cross-Route Generalization (Same Hotspot Config)
+Research question: Can the model predict WiFi quality on a route it has not seen, when the hotspot configuration is familiar?
+Procedure: Group runs that share the same hotspot configuration. Within each group, apply leave-one-route-out cross-validation. Train on all routes except one; test on the held-out route. This tests whether the model learns transferable geometry–signal relationships rather than memorizing location-specific patterns.
+Example: If runs R1 (Route A, HP-1) and R2 (Route B, HP-1) share the same single hotspot, train on R1, test on R2, and vice versa.
+Applicable when: At least 2 runs share the same hotspot configuration but use different routes. This is the expected minimum scenario.
+5.2. Protocol 2: Cross-Hotspot Generalization
+Research question: Does the model generalize when the hotspot configuration changes — e.g., trained on runs with HP-1, tested on runs with HP-2?
+Procedure: Split runs by hotspot identity. Train on all runs involving one set of hotspots; test on runs involving different (unseen) hotspots. The hotspot-relative features (distance, angle, LOS blockage) should transfer, while the hotspot_id feature will be unseen. Two variants:
+Without hotspot_id: Forces the model to rely entirely on geometric and relative features. Tests whether LiDAR-derived context captures universal propagation physics.
+With hotspot_id: The model sees an unseen hotspot_id at test time, revealing how much it depends on AP-specific patterns vs. general geometry.
+Applicable when: Runs exist with at least 2 different hotspot identities. Strongest when the same route appears with different hotspots (controlled comparison of environment vs. network effects).
+5.3. Protocol 3: Cross-Route + Cross-Hotspot (Full Generalization)
+Research question: Can the model predict WiFi quality on an entirely unseen (route, hotspot) combination?
+Procedure: Leave one full run out (both route and hotspot config are unseen together). Train on all remaining runs. This is the most realistic deployment test: the model encounters a new route with a new or different hotspot setup.
+Applicable when: Multiple runs exist with diverse (route, hotspot) combinations. This protocol uses all available data and is the primary protocol when the dataset is large enough.
+5.4. Protocol 4: Multi-Hotspot Advantage
+Research question: In multi-hotspot runs, can the model correctly rank which hotspot provides better quality, and can XAI explain why?
+Procedure: For runs with multiple simultaneous hotspots, compare predicted vs. actual ranking of hotspot quality at each timestep. Decompose SHAP contributions to show what differentiates the best AP from the others (e.g., LOS blockage, distance, angle).
+Applicable when: At least one run monitors multiple hotspots simultaneously. Even a single multi-hotspot run enables this analysis.
+6. Ablation Study Design
+The ablation study systematically removes feature groups to quantify each modality’s contribution. This is central to the paper’s narrative: showing that LiDAR geometry adds value beyond what telemetry and distance alone provide.
+Key comparison for the paper’s thesis: M4 vs. M1 (does LiDAR geometry improve over distance/angle alone?) and M6 vs. M5 (does LiDAR add value when telemetry is already available?). If both comparisons show improvement, the contribution is robust.
+7. XAI Analysis Framework
+7.1. Global Explanations
+Applied to the full model (M6) trained on pooled data:
+SHAP summary plot (beeswarm): Shows feature importance ranking across the entire dataset. Expected to reveal which feature group dominates: LiDAR geometry, telemetry, or hotspot-relative features. This directly quantifies each modality’s overall explanatory contribution.
+Feature group importance: Aggregate SHAP values by feature group (LiDAR / telemetry / hotspot-relative) to provide a clean modality-level comparison.
+SHAP dependence plots: For top features, show how their value relates to WiFi quality prediction, colored by interaction features. Expected interesting interactions: los_blockage_ratio × dist_to_hotspot (blockage matters more at distance), corridor_index × angle_to_hotspot (corridor waveguiding helps when hotspot is aligned).
+7.2. Local Explanations (Per-Prediction)
+Selected for illustrative cases in the paper:
+Case 1 — Unexpected degradation: Location close to hotspot but classified as Degraded. SHAP waterfall shows high los_blockage_ratio and high clutter_score overriding proximity advantage. Narrative: “obstacles between AGV and hotspot cause signal blockage despite short distance.”
+Case 2 — Unexpected good quality: Location far from hotspot but classified as Good. SHAP shows high openness in hotspot direction, low obstacle count, corridor alignment. Narrative: “corridor waveguiding effect sustains signal over longer distance.”
+Case 3 — Cross-hotspot comparison: Same physical location, different quality predictions for Hotspot A vs. B. SHAP decomposition shows which features drive the difference (angle, blockage direction, distance). Directly actionable for AP placement.
+Case 4 — Dynamic context matters: Quality drop during AGV turn. SHAP attributes to is_turning + angle_to_hotspot change. Narrative: “antenna orientation shift during turns temporarily degrades link.”
+7.3. Spatial Explanations (Maps)
+Aggregate SHAP values by AGV position to create explanation heatmaps overlaid on the facility layout:
+Prediction map: Predicted WiFi quality at each visited position, colored by class (Good/Degraded/Critical). Shows the communication quality landscape.
+Dominant factor map: At each position, which feature group has the highest absolute SHAP contribution? Color-coded: blue = LiDAR geometry dominates, orange = hotspot-relative dominates, green = telemetry dominates. Shows where each modality matters most.
+LOS blockage map: Spatial distribution of the los_blockage_ratio feature, overlaid with actual WiFi quality. Visual validation that blockage detection aligns with degradation zones.
+8. Paper Scaling Strategy
+The methodology produces a complete paper regardless of how many runs are ultimately collected. Each additional run with a new route or hotspot configuration unlocks new evaluation protocols:
+Bottom line: Even a single run produces a viable workshop paper. Each additional run with a new route or hotspot unlocks more evaluation depth. The pipeline handles all scenarios identically — the per-link architecture means adding runs simply adds training/test samples.
+9. Implementation Timeline
+Late-arriving runs: If additional runs (new routes or multi-hotspot data) arrive during weeks 3–5, they can be integrated by simply running the existing pipeline on the new data and enabling additional protocols. The per-link model architecture requires no changes — only the evaluation expands.
+10. Risk Register
+
+[TABLE 0]
+Run ID | Route | # Hotspots | Hotspot IDs | LiDAR | Telemetry
+R1 | Route A | 1 | HP-1 | ✓ | ✓
+R2 | Route B | 1 | HP-1 | ✓ | ✓
+R3 | Route A | 3 | HP-1, HP-2, HP-3 | ✓ | ✓
+R4 | Route C | 2 | HP-1, HP-4 | ✓ | ✓
+R5 | Route B | 2 | HP-2, HP-3 | ✓ | ✓
+... | ... | ... | ... | ✓ | ✓
+
+[TABLE 1]
+Class | Signal Condition | Operational Meaning
+Good | signal_quality > T_high | Reliable AGV control communication
+Degraded | T_low < signal_quality ≤ T_high | Possible packet loss, increased latency
+Critical | signal_quality ≤ T_low | Risk of control loss, AGV should slow/stop
+
+[TABLE 2]
+Model Variant | LiDAR Geo. | Telemetry | Hotspot-Rel. | Tests
+M0: Distance-only baseline | ✗ | ✗ | dist_to_hotspot only | Log-distance path loss
+M1: Hotspot-relative only | ✗ | ✗ | ✓ All | Geometry-blind spatial
+M2: Telemetry only | ✗ | ✓ | ✗ | Vehicle state value
+M3: LiDAR geometry only | ✓ | ✗ | ✗ | Environment-only value
+M4: LiDAR + hotspot-relative | ✓ | ✗ | ✓ All | Core proposed combo
+M5: Telemetry + hotspot-relative | ✗ | ✓ | ✓ All | No-LiDAR comparison
+M6: Full model (all features) | ✓ | ✓ | ✓ All | Proposed approach
+
+[TABLE 3]
+Data Available | Paper Scope | Protocols Available
+1 run (1 route, 1 hotspot) | Proof of concept. Random split evaluation. Core XAI analysis on individual predictions. | Random 80/20 split only
+2+ runs, same hotspot, different routes | Cross-route generalization. Full ablation. Spatial XAI maps across routes. | P1 (cross-route)
+2+ runs, different hotspots (any routes) | Cross-hotspot generalization. Test universal physics vs. AP-specific effects. | P1 + P2 (cross-hotspot)
+Mix: same route with different hotspot configs | Controlled experiment: isolate environment vs. network. Strongest novelty. | P1 + P2 + P3 (full)
+Any run with multi-hotspot monitoring | Hotspot ranking + XAI comparison: why is AP-X better than AP-Y here? | P4 (multi-AP advantage)
+
+[TABLE 4]
+Period | Task | Deliverable | Depends On
+Mar 8–22 | Data preprocessing | Synchronized dataset, feature extraction pipeline | Raw data available
+Mar 22–Apr 5 | Model training + ablation | Results for all model variants (M0–M6) | Feature pipeline
+Apr 5–12 | XAI analysis + figures | SHAP plots, spatial maps, case studies | Trained models
+Apr 12–19 | Paper writing | Full draft (6–8 pages) | All results
+Apr 19–28 | Revision + Hotspot B integration | Camera-ready submission | Draft + B data if available
+
+[TABLE 5]
+Risk | Likelihood | Mitigation
+WiFi signal has low variance (uniformly good) | Medium | Use ping as alternative target (more variable). Focus on fine-grained regression rather than 3-class classification. Frame as “quality assurance” rather than “degradation detection.”
+LiDAR features do not improve over distance-only baseline | Low | This is itself a publishable negative result (“in this industrial setting, WiFi propagation is dominated by distance, not geometry”). Pivot narrative to XAI analysis of the distance-dominant regime.
+Multi-hotspot run data not available in time | Medium | Paper is fully viable with single-hotspot runs only (Protocols 1–2). Multi-hotspot analysis (Protocol 4) becomes future work.
+Timestamp synchronization issues across data streams | Medium | Use nearest-neighbor matching with tolerance threshold. Report synchronization quality metrics. Smooth WiFi metrics with small rolling window to reduce temporal misalignment impact.
+LiDAR RSSI data unavailable | High | Already accounted for. Feature pipeline uses distance-only LiDAR features. No impact on methodology.
+Insufficient data volume for training | Low | LiDAR at 25 Hz and telemetry at regular intervals should yield thousands of timesteps per route. Gradient boosted trees require relatively small datasets. If needed, augment with sliding windows or synthetic perturbation.

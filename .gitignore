@@ -1,0 +1,64 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+*.egg
+.Python
+build/
+dist/
+
+# ---- Virtual environments ----
+.venv/
+venv/
+env/
+ENV/
+
+# ---- IDE / editor ----
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ---- Test / coverage ----
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+
+# ---- Jupyter ----
+.ipynb_checkpoints/
+
+# ---- Generated / intermediate artifacts ----
+# Keep the directory itself (via .gitkeep) but ignore everything inside.
+artifacts/*
+!artifacts/.gitkeep
+scripts/**/cache/
+scripts/**/__pycache__/
+scripts/extracted/
+scripts/summaries/
+
+# ---- LiDAR data-collection submodule (kept out of this repo) ----
+lidar-data-collection-code/
+
+# ---- LaTeX build outputs (paper) ----
+docs/paper/*.aux
+docs/paper/*.log
+docs/paper/*.out
+docs/paper/*.toc
+docs/paper/*.bbl
+docs/paper/*.blg
+docs/paper/*.synctex.gz
+docs/paper/*.fls
+docs/paper/*.fdb_latexmk
+
+# ---- Misc ----
+*.log
+*.tmp
+*.bak

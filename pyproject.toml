@@ -1,0 +1,37 @@
+[project]
+name = "flics2026-lidar-wifi"
+version = "0.1.0"
+description = "FLICS-2026: LiDAR-derived Wi-Fi quality prediction — data merging, time synchronisation and exploratory analysis."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+authors = [
+    { name = "Myroslav Mishchuk" },
+]
+
+dependencies = [
+    "numpy>=2.0,<3",
+    "pandas>=2.2,<4",
+    "scipy>=1.13,<2",
+    "matplotlib>=3.8,<4",
+    "h5py>=3.10,<4",
+    "pyarrow>=15,<25",
+    "python-docx>=1.1,<2",
+    "pypdf>=4,<7",
+    "Markdown>=3.5,<4",
+    "reportlab>=4,<5",
+    "xhtml2pdf>=0.2.16,<0.3",
+    "svglib>=1.5,<2",
+    "Pillow>=10,<13",
+]
+
+[tool.setuptools]
+packages = []
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

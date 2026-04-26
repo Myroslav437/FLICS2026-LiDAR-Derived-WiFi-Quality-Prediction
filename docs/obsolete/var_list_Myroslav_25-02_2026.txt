@@ -1,0 +1,91 @@
+FH_ID_7000.TimeStamp
+FH.7000.[mikrotik].load_long
+FH.7000.[mikrotik].load_mid
+FH.7000.[mikrotik].load_short
+FH.7000.[mikrotik].ping
+FH.7000.[mikrotik].reserve
+FH.7000.[mikrotik].signal_noise
+FH.7000.[mikrotik].signal_power
+FH.7000.[mikrotik].signal_quality
+FH.7000.[mikrotik].uptime
+FH.7000.[mikrotik].wifi_state_1
+FH_ID_7000.AGV_ID
+FH_ID_7000.CRC
+FH_ID_7000.Content
+FH_ID_7000.Data
+FH_ID_7000.DataLength
+FH_ID_7000.Id
+FH_ID_7000.Length
+FH_ID_7000.Location_code
+FH_ID_7000.Number
+FH_ID_7000.Status
+FH_ID_7000.ver
+FH_ID_6000.TimeStamp
+FH_ID_6000.Number
+FH_ID_6000.Status
+FH.6000.[ENS] - Energy Signals.Battery cell voltage
+FH.6000.[ENS] - Energy Signals.Battery value
+FH.6000.[ENS] - Energy Signals.Cumulative energy consumption
+FH.6000.[ENS] - Energy Signals.Cumulative energy consumption_Uint
+FH.6000.[ENS] - Energy Signals.Momentary current consuption
+FH.6000.[ENS] - Energy Signals.Momentary energy consumption
+FH.6000.[ENS] - Energy Signals.Momentary power consumption
+FH.6000.[G1BS] GROUP 1 - BRAKES SIGNALS.Brake Lock - command on
+FH.6000.[G1BS] GROUP 1 - BRAKES SIGNALS.Brake Lock - executed
+FH.6000.[G1BS] GROUP 1 - BRAKES SIGNALS.Brake Lock - in progress (#)
+FH.6000.[G1BS] GROUP 1 - BRAKES SIGNALS.Brake Release - command on
+FH.6000.[G1BS] GROUP 1 - BRAKES SIGNALS.Brake Release - executed
+FH.6000.[G1BS] GROUP 1 - BRAKES SIGNALS.Brake Release - in progress (#)
+FH.6000.[G1LDS] GROUP 1 - LEFT DRIVE SIGNALS.ActualSpeed_L
+FH.6000.[G1LDS] GROUP 1 - LEFT DRIVE SIGNALS.Left drive activate - command on
+FH.6000.[G1LDS] GROUP 1 - LEFT DRIVE SIGNALS.Left drive activate - enable active
+FH.6000.[G1LDS] GROUP 1 - LEFT DRIVE SIGNALS.Left drive activate - executed
+FH.6000.[G1LDS] GROUP 1 - LEFT DRIVE SIGNALS.Left drive activate - in progress (#)
+FH.6000.[G1LDS] GROUP 1 - LEFT DRIVE SIGNALS.Left drive stop - automatic permission (#)
+FH.6000.[G1LDS] GROUP 1 - LEFT DRIVE SIGNALS.Left drive stop - command on
+FH.6000.[G1LDS] GROUP 1 - LEFT DRIVE SIGNALS.Left drive stop - executed
+FH.6000.[G1LDS] GROUP 1 - LEFT DRIVE SIGNALS.Left drive stop - in progress (#)
+FH.6000.[G2RDS] GROUP 2 - RIGHT DRIVE SIGNALS.ActualSpeed_R
+FH.6000.[G2RDS] GROUP 2 - RIGHT DRIVE SIGNALS.Right drive activate - command on
+FH.6000.[G2RDS] GROUP 2 - RIGHT DRIVE SIGNALS.Right drive activate - enable active
+FH.6000.[G2RDS] GROUP 2 - RIGHT DRIVE SIGNALS.Right drive activate - executed
+FH.6000.[G2RDS] GROUP 2 - RIGHT DRIVE SIGNALS.Right drive activate - in progress (#)
+FH.6000.[G2RDS] GROUP 2 - RIGHT DRIVE SIGNALS.Right drive stop - command on
+FH.6000.[G2RDS] GROUP 2 - RIGHT DRIVE SIGNALS.Right drive stop - executed
+FH.6000.[G2RDS] GROUP 2 - RIGHT DRIVE SIGNALS.Right drive stop - in progress (#)
+FH.6000.[IS] - Inclination Signals.X inclination
+FH.6000.[IS] - Inclination Signals.Y inclination
+FH.6000.[NNCF] - Natural Navigation Command Feedback.3105 - Go to destination result - Destination ID
+FH.6000.[NNCF] - Natural Navigation Command Feedback.3105 - Go to destination result - Go to result
+FH.6000.[NNCF] - Natural Navigation Command Feedback.3106 - Pause drive result - Pause result
+FH.6000.[NNCF] - Natural Navigation Command Feedback.3107 - Resume drive result - Resume result
+FH.6000.[NNCF] - Natural Navigation Command Feedback.3108 - Abort drive result - Abort result
+FH.6000.[NNS] - Natural Navigation Signals.Current segment
+FH.6000.[NNS] - Natural Navigation Signals.Error status
+FH.6000.[NNS] - Natural Navigation Signals.Going to ID
+FH.6000.[NNS] - Natural Navigation Signals.Heading
+FH.6000.[NNS] - Natural Navigation Signals.Level
+FH.6000.[NNS] - Natural Navigation Signals.Natural Navigation state
+FH.6000.[NNS] - Natural Navigation Signals.Natural Navigation status
+FH.6000.[NNS] - Natural Navigation Signals.On route status
+FH.6000.[NNS] - Natural Navigation Signals.Position confidence
+FH.6000.[NNS] - Natural Navigation Signals.Position initialize status
+FH.6000.[NNS] - Natural Navigation Signals.Speed
+FH.6000.[NNS] - Natural Navigation Signals.Target reached
+FH.6000.[NNS] - Natural Navigation Signals.X-coordinate
+FH.6000.[NNS] - Natural Navigation Signals.Y-coordinate
+FH.6000.[ODS] - Odometry Signals.Cumulative distance right
+FH.6000.[ODS] - Odometry Signals.Momentary frequency of left encoder pulses
+FH.6000.[ODS] - Odometry Signals.Momentary frequency of right encoder pulses
+FH.6000.[SS] SAFETY SIGNALS.Front scanner safety zone not violated
+FH.6000.[SS] SAFETY SIGNALS.Front scanner warning zone not violated
+FH.6000.[TMP].Heading_x1000
+FH.6000.[TMP].Speed_x1000
+FH.6000.[TMP].X-coordinate_x1000
+FH.6000.[TMP].Y-coordinate_x1000
+FH.6000.[WI] - WARNING INFORMATION.Warning Information - Safety - Front Scanner Warning Zone Active
+FH.6000.[WI] - WARNING INFORMATION.Warning Information - Safety - Rear Scanner Warning Zone Active
+FH.6000.[WS] WEIGHT STATUSES.Weight statuses - front left strain gauge weight
+FH.6000.[WS] WEIGHT STATUSES.Weight statuses - front right strain gauge weight
+FH.6000.[WS] WEIGHT STATUSES.Weight statuses - rear left strain gauge weight
+FH.6000.[WS] WEIGHT STATUSES.Weight statuses - rear right strain gauge weight

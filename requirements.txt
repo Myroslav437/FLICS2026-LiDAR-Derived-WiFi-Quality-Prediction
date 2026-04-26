@@ -1,0 +1,25 @@
+# Runtime dependencies for the FLICS-2026 LiDAR / Wi-Fi analysis pipeline.
+#
+# Pinned to the versions used during development (Python 3.14 venv).
+# Tighten/loosen as needed for reproducibility.
+
+# Core scientific stack
+numpy==2.4.4
+pandas==3.0.2
+scipy==1.17.1
+matplotlib==3.10.9
+
+# I/O
+h5py==3.16.0
+pyarrow==24.0.0
+
+# Document extraction (scripts/extract_docs.py)
+python-docx==1.2.0
+pypdf==6.10.2
+
+# Markdown -> PDF rendering for the generated reports
+Markdown==3.10.2
+reportlab==4.4.10
+xhtml2pdf==0.2.17
+svglib==1.6.0
+Pillow==12.2.0

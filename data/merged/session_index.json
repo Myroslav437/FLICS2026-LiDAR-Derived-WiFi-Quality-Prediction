@@ -1,0 +1,104 @@
+{
+  "lidar_offset_seconds_applied": 3600,
+  "offset_explanation": "Unix UTC LiDAR timestamps shifted by +3600 s so that they represent Poland CET wall clock and align with the telemetry CSV timestamp strings.",
+  "telemetry": {
+    "rows": 653612,
+    "files": {
+      "25.02.2026": {
+        "out_Myroslav_25-02_2026.csv": {
+          "start_row": 0,
+          "stop_row": 44040,
+          "rows": 44040,
+          "n_full_schema": 44040,
+          "n_nowifi_schema": 0,
+          "n_dropped": 0
+        }
+      },
+      "15.03.2026": {
+        "out_Myroslav_15-03_2026_1.csv": {
+          "start_row": 44040,
+          "stop_row": 217082,
+          "rows": 173042,
+          "n_full_schema": 172982,
+          "n_nowifi_schema": 60,
+          "n_dropped": 5
+        },
+        "out_Myroslav_15-03_2026_2.csv": {
+          "start_row": 217082,
+          "stop_row": 342710,
+          "rows": 125628,
+          "n_full_schema": 125617,
+          "n_nowifi_schema": 11,
+          "n_dropped": 5
+        },
+        "out_Myroslav_15-03_2026_3.csv": {
+          "start_row": 342710,
+          "stop_row": 377901,
+          "rows": 35191,
+          "n_full_schema": 35191,
+          "n_nowifi_schema": 0,
+          "n_dropped": 0
+        },
+        "out_Myroslav_15-03_2026_4.csv": {
+          "start_row": 377901,
+          "stop_row": 439435,
+          "rows": 61534,
+          "n_full_schema": 61534,
+          "n_nowifi_schema": 0,
+          "n_dropped": 1
+        }
+      },
+      "24.03.2026": {
+        "out_Myroslav_24-03_2026_1.csv": {
+          "start_row": 439435,
+          "stop_row": 480834,
+          "rows": 41399,
+          "n_full_schema": 41399,
+          "n_nowifi_schema": 0,
+          "n_dropped": 0
+        },
+        "out_Myroslav_24-03_2026_2.csv": {
+          "start_row": 480834,
+          "stop_row": 516374,
+          "rows": 35540,
+          "n_full_schema": 35540,
+          "n_nowifi_schema": 0,
+          "n_dropped": 0
+        },
+        "out_Myroslav_24-03_2026_3.csv": {
+          "start_row": 516374,
+          "stop_row": 653612,
+          "rows": 137238,
+          "n_full_schema": 137238,
+          "n_nowifi_schema": 0,
+          "n_dropped": 0
+        }
+      }
+    },
+    "path": "C:\\Users\\myros\\projects\\FLICS2026-LiDAR-Derived-WiFi-Quality-Prediction\\data\\merged\\telemetry.parquet"
+  },
+  "lidar": {
+    "scans": 718679,
+    "sessions": {
+      "25.02.2026": {
+        "h5": "lidar_data_20260225_151241.h5",
+        "start_row": 0,
+        "stop_row": 248471,
+        "rows": 248471
+      },
+      "15.03.2026": {
+        "h5": "lidar_data_20260315_165958.h5",
+        "start_row": 248471,
+        "stop_row": 536967,
+        "rows": 288496
+      },
+      "24.03.2026": {
+        "h5": "lidar_data_20260324_130319.h5",
+        "start_row": 536967,
+        "stop_row": 718679,
+        "rows": 181712
+      }
+    },
+    "path": "C:\\Users\\myros\\projects\\FLICS2026-LiDAR-Derived-WiFi-Quality-Prediction\\data\\merged\\lidar.h5"
+  }
+}
