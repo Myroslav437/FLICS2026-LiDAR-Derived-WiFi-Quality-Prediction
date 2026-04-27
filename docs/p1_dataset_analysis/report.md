@@ -11,7 +11,7 @@
 ## 1. Construction summary
 - Inputs: `data/merged/joint_coverage.parquet` (681,593 rows × 45 columns); `data/merged/lidar.h5` (718,679 scans × 2,700 distance slots, uint16, mm).
 - Phase 0 artifacts: `scripts/p0_analysis/artifacts/{anomaly_mask, anomaly_threshold, agv_body_mask, lidar_fov, ap_coords, feature_extractor}`.
-- Frozen feature extractor used: yes (LiDAR scalar aggregates + AP-relative features). Sectoral features (14 columns) computed in the wrapper (`scripts/p1_analysis/build_dataset.py`) by direct computation against the LiDAR HDF5 with the AGV-body mask applied — the frozen extractor does not produce sectoral features.
+- Frozen feature extractor used: yes (LiDAR scalar aggregates + AP-relative features). Sectoral features (14 columns) computed in the wrapper (`scripts/p1_dataset_analysis/build_dataset.py`) by direct computation against the LiDAR HDF5 with the AGV-body mask applied — the frozen extractor does not produce sectoral features.
 - Wall-clock construction time: 250.9 s.
 - Row-by-row provenance preserved: yes (`joint_idx` covers `[0, 681593)`).
 
@@ -258,7 +258,7 @@ Phase 1 training filters `~df['anomaly_flag']`, so the non-anomaly-NaN column is
 
 - Validation wall-clock: 5.8 s.
 - Determinism verified: a back-to-back rebuild on the same machine with the same `SEED = 20260427` produced a byte-identical `dataset.parquet` (SHA-256 above unchanged). The build is deterministic by construction — sorted joint parquet input (stable sort key `(session_date, fh7000_timestamp)`), fixed feature definitions, no RNG in feature derivation, ZSTD compression at default level, parquet statistics disabled.
-- To re-verify on a fresh checkout, run `python -m scripts.p1_analysis.run_all` and compare the SHA-256 reported in `data/phase1/dataset.sha256` against the value above.
+- To re-verify on a fresh checkout, run `python -m scripts.p1_dataset_analysis.run_all` and compare the SHA-256 reported in `data/phase1/dataset.sha256` against the value above.
 
 ## 10. Recommendation
 - **Phase 1 may proceed: YES.**

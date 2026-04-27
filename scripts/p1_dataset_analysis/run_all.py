@@ -2,8 +2,8 @@
 
 Equivalent to::
 
-    python -m scripts.p1_analysis.build_dataset
-    python -m scripts.p1_analysis.validate_dataset
+    python -m scripts.p1_dataset_analysis.build_dataset
+    python -m scripts.p1_dataset_analysis.validate_dataset
 
 Exits non-zero (with the validator's exit code) if any hard validation check
 fails; the report is written either way.
@@ -25,7 +25,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts.p1_analysis import build_dataset, validate_dataset  # noqa: E402
+from scripts.p1_dataset_analysis import build_dataset, validate_dataset  # noqa: E402
 
 
 def main() -> None:

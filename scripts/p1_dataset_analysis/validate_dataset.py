@@ -1,10 +1,10 @@
 """Phase 1 dataset validation.
 
 Runs every check listed in §5 of the Phase 1 dataset brief, writes the
-validation report to ``docs/phase1_dataset/report.md`` with embedded figures,
+validation report to ``docs/p1_dataset_analysis/report.md`` with embedded figures,
 and exits non-zero (with a clear summary) if any hard check fails.
 
-Run as a module: ``python -m scripts.p1_analysis.validate_dataset``.
+Run as a module: ``python -m scripts.p1_dataset_analysis.validate_dataset``.
 """
 from __future__ import annotations
 
@@ -37,7 +37,7 @@ if str(ROOT) not in sys.path:
 
 from scripts.p0_analysis import config as C  # noqa: E402
 
-from scripts.p1_analysis.build_dataset import (  # noqa: E402
+from scripts.p1_dataset_analysis.build_dataset import (  # noqa: E402
     SCHEMA_ORDER, LIDAR_SCALAR_COLS, N_SECTORS, CLUTTER_MM,
     expected_dtypes, sha256_of, _build_sector_membership,
     DATASET_PATH, SHA256_PATH,
@@ -45,7 +45,7 @@ from scripts.p1_analysis.build_dataset import (  # noqa: E402
 
 SEED = 20260427
 
-REPORT_DIR = ROOT / "docs" / "phase1_dataset"
+REPORT_DIR = ROOT / "docs" / "p1_dataset_analysis"
 FIGURES_DIR = REPORT_DIR / "figures"
 REPORT_PATH = REPORT_DIR / "report.md"
 ARTIFACTS_DIR = ROOT / "scripts" / "p0_analysis" / "artifacts"
@@ -954,7 +954,7 @@ def write_report(df: pd.DataFrame, log: CheckLog,
             f"- Frozen feature extractor used: yes "
             f"(LiDAR scalar aggregates + AP-relative features). "
             f"Sectoral features (14 columns) computed in the wrapper "
-            f"(`scripts/p1_analysis/build_dataset.py`) by direct computation "
+            f"(`scripts/p1_dataset_analysis/build_dataset.py`) by direct computation "
             f"against the LiDAR HDF5 with the AGV-body mask applied — "
             f"the frozen extractor does not produce sectoral features.\n"
             f"- Wall-clock construction time: "
@@ -1006,7 +1006,7 @@ def write_report(df: pd.DataFrame, log: CheckLog,
         f"definitions, no RNG in feature derivation, ZSTD compression at "
         f"default level, parquet statistics disabled.\n"
         f"- To re-verify on a fresh checkout, run "
-        f"`python -m scripts.p1_analysis.run_all` and compare the SHA-256 "
+        f"`python -m scripts.p1_dataset_analysis.run_all` and compare the SHA-256 "
         f"reported in `data/phase1/dataset.sha256` against the value above.\n"
     )
 
@@ -1048,7 +1048,7 @@ def main() -> None:
     print(f"       {len(df):,} rows x {len(df.columns)} cols   "
           f"size {file_size_mb:.1f} MB   sha256 {digest[:16]}…")
 
-    build_summary_path = ROOT / "scripts" / "p1_analysis" / "cache" / "build_summary.json"
+    build_summary_path = ROOT / "scripts" / "p1_dataset_analysis" / "cache" / "build_summary.json"
     build_summary = (json.loads(build_summary_path.read_text())
                      if build_summary_path.exists() else None)
 

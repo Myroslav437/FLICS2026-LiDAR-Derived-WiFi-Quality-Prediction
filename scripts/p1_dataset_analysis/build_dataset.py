@@ -13,7 +13,7 @@ for LiDAR scalar aggregates and AP-relative features; this script invokes
 produce (sectoral features, telemetry, position, targets, anomaly columns,
 provenance) on top.
 
-Run as a module: ``python -m scripts.p1_analysis.build_dataset``.
+Run as a module: ``python -m scripts.p1_dataset_analysis.build_dataset``.
 """
 from __future__ import annotations
 
@@ -53,7 +53,7 @@ SEED = 20260427
 DATASET_DIR = ROOT / "data" / "phase1"
 DATASET_PATH = DATASET_DIR / "dataset.parquet"
 SHA256_PATH = DATASET_DIR / "dataset.sha256"
-CACHE_DIR = ROOT / "scripts" / "p1_analysis" / "cache"
+CACHE_DIR = ROOT / "scripts" / "p1_dataset_analysis" / "cache"
 ARTIFACTS_DIR = ROOT / "scripts" / "p0_analysis" / "artifacts"
 ANOMALY_MASK_PATH = ARTIFACTS_DIR / "anomaly_mask.parquet"
 FOV_PATH = ARTIFACTS_DIR / "lidar_fov.json"
