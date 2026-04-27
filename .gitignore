@@ -43,9 +43,8 @@ scripts/**/cache/
 scripts/**/__pycache__/
 scripts/extracted/
 scripts/summaries/
-
-# ---- LiDAR data-collection submodule (kept out of this repo) ----
-lidar-data-collection-code/
+scripts/**/*_backup/
+scripts/**/artifacts/
 
 # ---- LaTeX build outputs (paper) ----
 docs/paper/*.aux

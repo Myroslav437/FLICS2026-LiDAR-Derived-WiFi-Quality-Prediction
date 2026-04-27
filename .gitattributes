@@ -8,6 +8,14 @@ data/**/*.npz           filter=lfs diff=lfs merge=lfs -text
 data/**/*.ntm           filter=lfs diff=lfs merge=lfs -text
 data/**/*.ntt           filter=lfs diff=lfs merge=lfs -text
 
+# Pipeline-output binary artifacts checked in alongside the scripts that
+# generate them (anomaly masks, residual parquets, backed-up artifact
+# snapshots, etc.). `scripts/**/cache/` is git-ignored so these patterns
+# only catch the durable artifact and v*_backup directories.
+scripts/**/*.parquet    filter=lfs diff=lfs merge=lfs -text
+scripts/**/*.h5         filter=lfs diff=lfs merge=lfs -text
+scripts/**/*.npz        filter=lfs diff=lfs merge=lfs -text
+
 # Generated PDFs of analysis reports (often regenerated, can be sizable).
 docs/**/*.pdf           filter=lfs diff=lfs merge=lfs -text
 

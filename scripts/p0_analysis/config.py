@@ -29,6 +29,18 @@ AP_PRIORS = {
     "25.02.2026": (-2.5, 0.5),
 }
 
+# Lab-measured ground-truth AP coordinates per session, in each session's own
+# map frame. Effective measurement accuracy ~5-10 cm (tape-measure / map-
+# reference uncertainty). Treated as exact for path-loss-fit and feature-
+# engineering purposes; the 1 mm agreement between 15.03 and 24.03 is
+# supporting evidence of the same-map hypothesis (Gate 0).
+AP_TRUTH = {
+    "15.03.2026": (1.722, 9.662),   # Map A
+    "24.03.2026": (1.721, 9.662),   # Map A — agrees with 15.03 to 1 mm
+    "25.02.2026": (-3.071, 0.038),  # Map B
+}
+AP_TRUTH_UNCERTAINTY_CM = "~5-10"
+
 # Map A = 15.03 + 24.03 (assumed shared frame, verified by P0.0)
 # Map B = 25.02 (different frame)
 SAME_MAP_PAIR = ("15.03.2026", "24.03.2026")
