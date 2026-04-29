@@ -1,8 +1,8 @@
-"""Phase 1 / Project A end-to-end driver: modeling → SHAP → robustness → report."""
+"""Phase 1 / Project A end-to-end driver: modeling → SHAP → robustness → hardening → report."""
 
 from __future__ import annotations
 
-from . import build_results_report, run_modeling, run_robustness, run_xai
+from . import build_results_report, run_hardening_all, run_modeling, run_robustness, run_xai
 
 
 def main() -> None:
@@ -12,7 +12,9 @@ def main() -> None:
     run_xai.main()
     print("=== Project A: stage 3 — run_robustness ===")
     run_robustness.main()
-    print("=== Project A: stage 4 — build_results_report ===")
+    print("=== Project A: stage 4 — run_hardening_all (Hardening A, B) ===")
+    run_hardening_all.main()
+    print("=== Project A: stage 5 — build_results_report ===")
     build_results_report.main()
     print("=== Project A complete ===")
 

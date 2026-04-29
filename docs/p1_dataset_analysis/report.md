@@ -7,6 +7,7 @@
 - File: `data/phase1/dataset.parquet` (size: 44.6 MB; SHA-256: `c164c53b5dd27238...`).
 - All hard validation checks passed: yes.
 - Outstanding warnings: none.
+- **Noise floor (Hardening D, §9)**: σ_intra = **4.95 dB** at 0.5 m cell granularity (15.03: 4.901 dB; 24.03: 5.005 dB; 85 same-map qualifying cells). Same-cell |Δ mean signal_power| between 15.03 and 24.03: median 4.24 dB (IQR [3.01, 7.13] dB). The cleanest within-session model in the project (R-4 W2 H1 in-FOV; RMSE = 1.995 dB) operates ~3 dB below this floor by exploiting sub-cell information.
 
 ## 1. Construction summary
 - Inputs: `data/merged/joint_coverage.parquet` (681,593 rows × 45 columns); `data/merged/lidar.h5` (718,679 scans × 2,700 distance slots, uint16, mm).
@@ -251,7 +252,52 @@ Phase 1 training filters `~df['anomaly_flag']`, so the non-anomaly-NaN column is
 | F-B | 401,568 | 374,877 | 280,025 | 232,279 | 134,692 | 97,587 |
 | F-C | 448,965 | 390,684 | 232,628 | 216,472 | 121,831 | 94,641 |
 
-## 9. Reproducibility
+## 9. Dataset noise floor (Hardening D)
+
+This section characterizes the dataset's irreducible WiFi-field noise floor at the canonical 0.5 m cell granularity. Originally Experiment D in the dissolved hardening package; merged into the dataset analysis report on 2026-04-28 because it is a dataset-level property referenced by both Project A (cross-session) and Project B (within-session).
+
+**Goal.** Quantify the irreducible session-internal WiFi-field noise floor on this dataset to preempt the "your dataset is too noisy for any conclusion" reviewer objection.
+
+### 9.1 Same-cell |Δ| between 15.03 and 24.03 (P0.6 reproduction)
+
+- 85 qualifying cells (≥30 rows on each session, cell size 0.50 m).
+- median |Δ| = **4.24 dB**.
+- IQR = [3.01, 7.13] dB.
+- median signed Δ = +0.99 dB.
+
+Figure: ![dataset noise floor histogram](figures/dataset_noise_floor.png)
+
+### 9.2 Within-cell σ_intra (irreducible noise floor)
+
+Mean of per-cell σ(signal_power) over the qualifying cells, computed independently per session.
+
+| Session | mean σ_intra (dB) |
+|---|---:|
+| 15.03.2026 | 4.901 |
+| 24.03.2026 | 5.005 |
+| **global** | **4.953** |
+
+### 9.3 Comparison to model performance
+
+- Cleanest within-session model (R-4 W2 H1 in-FOV; see `docs/p1_project_b/results_report.md` §4.3.1) RMSE = 1.995 dB.
+- σ_intra = 4.953 dB.
+- Gap (model − σ_intra) = -2.96 dB.
+
+The cleanest within-session model already operates **~3 dB below** the 0.5 m position-binning σ_intra. The model exploits sub-cell information (position at sensor resolution, telemetry, AP-relative geometry) to predict at a precision that wouldn't be possible if we only knew which 0.5 m cell the AGV occupied. The remaining residual error is dominated by intrinsic non-stationarity of the WiFi field across visits, not by missing environmental structure.
+
+### 9.4 Paragraph for paper §III
+
+Two fully-mapped passes of the same workspace 9 days apart show median |Δ mean signal_power| = 4.24 dB across 85 0.5 m cells (IQR [3.01, 7.13] dB). Within a single session, the mean per-cell σ(signal_power) is **4.95 dB** across the same 85 cells. The cleanest within-session model (R-4 W2 H1 in-FOV) reaches RMSE = 1.995 dB by exploiting sub-cell position (x_m, y_m at sensor resolution), telemetry, and AP-relative geometry — already below the 0.5 m position-binning σ_intra. The remaining residual is dominated by intrinsic non-stationarity of the WiFi field across visits; LiDAR features can therefore only contribute information that is also encoded by sub-cell position + telemetry, and so unsurprisingly do not improve on it.
+
+### 9.5 Reproducibility (Hardening D)
+
+- Per-cell raw data: `scripts/p1_dataset_analysis/results/noise_floor_same_cell_deltas.parquet`, `scripts/p1_dataset_analysis/results/noise_floor_per_cell_sigma.parquet`.
+- Summary JSON: `scripts/p1_dataset_analysis/results/noise_floor_summary.json`.
+- Figure: `docs/p1_dataset_analysis/figures/dataset_noise_floor.png` (referenced above).
+- Table: `docs/p1_dataset_analysis/tables/dataset_noise_floor.md` (granular Markdown view of the same data, with explicit per-session σ_intra and the model-performance comparison).
+- Re-run: `python -m scripts.p1_dataset_analysis.run_noise_floor` (no fits — editorial; ~5 s wall-clock for the histogram + σ_intra reduction). Also wired into `python -m scripts.p1_dataset_analysis.run_all` as the third stage.
+
+## 10. Reproducibility
 - expected (sidecar): `c164c53b5dd272384f32564758b08ad53ec886955ef2e50ce69979e125018270`
 - actual:             `c164c53b5dd272384f32564758b08ad53ec886955ef2e50ce69979e125018270`
 - match: OK
@@ -260,5 +306,5 @@ Phase 1 training filters `~df['anomaly_flag']`, so the non-anomaly-NaN column is
 - Determinism verified: a back-to-back rebuild on the same machine with the same `SEED = 20260427` produced a byte-identical `dataset.parquet` (SHA-256 above unchanged). The build is deterministic by construction — sorted joint parquet input (stable sort key `(session_date, fh7000_timestamp)`), fixed feature definitions, no RNG in feature derivation, ZSTD compression at default level, parquet statistics disabled.
 - To re-verify on a fresh checkout, run `python -m scripts.p1_dataset_analysis.run_all` and compare the SHA-256 reported in `data/phase1/dataset.sha256` against the value above.
 
-## 10. Recommendation
+## 11. Recommendation
 - **Phase 1 may proceed: YES.**

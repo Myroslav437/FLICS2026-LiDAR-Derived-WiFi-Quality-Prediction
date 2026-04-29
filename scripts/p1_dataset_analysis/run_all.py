@@ -25,7 +25,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts.p1_dataset_analysis import build_dataset, validate_dataset  # noqa: E402
+from scripts.p1_dataset_analysis import build_dataset, run_noise_floor, validate_dataset  # noqa: E402
 
 
 def main() -> None:
@@ -38,6 +38,11 @@ def main() -> None:
     print("# Phase 1: validate_dataset")
     print("#" * 70)
     validate_dataset.main()
+
+    print("\n" + "#" * 70)
+    print("# Phase 1: noise floor (Hardening D)")
+    print("#" * 70)
+    run_noise_floor.main()
 
 
 if __name__ == "__main__":

@@ -18,6 +18,7 @@ ENV/
 # ---- IDE / editor ----
 .vscode/
 .idea/
+.claude/
 *.swp
 *.swo
 .DS_Store

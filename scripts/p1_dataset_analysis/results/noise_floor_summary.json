@@ -1,0 +1,21 @@
+{
+  "delta": {
+    "n_cells": 85,
+    "median_delta_dB": 0.9928216423811165,
+    "median_abs_delta_dB": 4.2415224334055,
+    "q25_abs_delta_dB": 3.0075249135651845,
+    "q75_abs_delta_dB": 7.1261841606669165,
+    "min_rows_per_session": 30,
+    "cell_size_m": 0.5
+  },
+  "sigma_intra": {
+    "n_cells": 85,
+    "min_rows_per_session": 30,
+    "cell_size_m": 0.5,
+    "sigma_intra_global_dB": 4.952866645713331,
+    "sigma_intra_per_session_dB": {
+      "15.03.2026": 4.9009960966944845,
+      "24.03.2026": 5.004737194732177
+    }
+  }
+}

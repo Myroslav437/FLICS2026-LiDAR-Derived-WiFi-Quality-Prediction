@@ -141,3 +141,43 @@ PROVENANCE_COLS = [
 
 BOOTSTRAP_B = 1000
 SHAP_SUBSAMPLE_LIMIT = 100_000
+
+
+# ---- Hardening experiments (A, B) -------------------------------------
+#
+# Originally lived under scripts/p1_hardening/config.py. Merged in 2026-04-28
+# (see scripts/maintenance/merge_hardening_log.md). Kept here so Project A's
+# hardening runners (run_hardening_placebo.py, run_hardening_lightgbm.py) and
+# Project B's run_hardening_placebo.py — which imports placebo helpers from
+# Project A — share the same definitions.
+
+# 19 ego-frame LiDAR columns block-shuffled by the placebo helper.
+# clutter_frac_toward_AP and is_AP_in_FOV are AP-relative and NOT shuffled.
+LIDAR_COLUMNS: list[str] = list(LIDAR_SCALAR_FEATURES) + list(LIDAR_SECTORAL_FEATURES)
+assert len(LIDAR_COLUMNS) == 19, f"expected 19 LiDAR columns, got {len(LIDAR_COLUMNS)}"
+
+# XGBoost hyperparameter sets used by Hardening A (placebo) — same as the
+# diagnostic robustness configs.
+XGB_LOCKED = dict(XGB_PARAMS)
+XGB_H1 = {**XGB_PARAMS, "max_depth": 4}
+XGB_LABELS = {"locked": XGB_LOCKED, "H1": XGB_H1}
+
+# LightGBM hyperparameter sets for Hardening B (framework-agnosticism).
+LGB_DEFAULT = {
+    "objective": "regression",
+    "metric": "rmse",
+    "boosting_type": "gbdt",
+    "learning_rate": 0.05,
+    "num_leaves": 31,
+    "min_data_in_leaf": 20,
+    "verbose": -1,
+    "seed": SEED,
+    "deterministic": True,
+}
+LGB_H1_EQUIV = {**LGB_DEFAULT, "num_leaves": 15}
+LGB_LABELS = {"default": LGB_DEFAULT, "H1_equiv": LGB_H1_EQUIV}
+
+# Verdict thresholds shared by Hardening A, B, C, E.
+PLACEBO_TOLERANCE_DB = 0.5
+DELTA_LIDAR_HELPS_DB = 1.0
+SOFT_HELPS_DB = 0.5

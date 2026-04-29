@@ -31,8 +31,9 @@ docs/**/*.pdf           filter=lfs diff=lfs merge=lfs -text
 *.toml   text eol=lf
 *.cfg    text eol=lf
 
-# Trained-model snapshots (XGBoost JSON) — multi-MB serialized boosters
-# with no useful line-by-line diff (the H2_randval diagnostic model is
-# ~32 MB on its own). Route through LFS as binary; placed after the
-# *.json text-normalization rule so -text and the LFS filter win.
+# Trained-model snapshots (XGBoost JSON, LightGBM TXT) — serialized
+# boosters with no useful line-by-line diff (the H2_randval diagnostic
+# model is ~32 MB on its own). Route through LFS as binary; placed after
+# the text-normalization rules so -text and the LFS filter win.
 scripts/**/models/*.json    filter=lfs diff=lfs merge=lfs -text
+scripts/**/models/*.txt     filter=lfs diff=lfs merge=lfs -text

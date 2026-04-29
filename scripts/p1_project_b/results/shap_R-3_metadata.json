@@ -1,0 +1,8 @@
+{
+  "fold": "R-3",
+  "n_rows_used": 44657,
+  "subsampled_from": 44657,
+  "shap_consistency_max_abs_diff": 0.0001373291015625,
+  "best_iteration": 1999,
+  "selection_justification": "R-3 W4 overall RMSE = 4.57 dB within 1 dB of median 6.06 dB; using R-3."
+}
