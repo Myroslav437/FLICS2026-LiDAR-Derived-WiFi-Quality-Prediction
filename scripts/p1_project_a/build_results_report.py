@@ -481,7 +481,8 @@ def render_xai2(folds_list: list[str] = FOLDS) -> tuple[Path, dict]:
     for fold in folds_list:
         df = pd.read_parquet(_shap_path(fold))
         if len(df) > rng_cap:
-            sub = df.sample(n=rng_cap, random_state=config.SEED + hash(fold) % (1 << 31))
+            _digest = int.from_bytes(__import__("hashlib").sha256(fold.encode("utf-8")).digest()[:4], "big")
+            sub = df.sample(n=rng_cap, random_state=(config.SEED + _digest) % (1 << 31))
         else:
             sub = df
         for feat in features:
@@ -811,6 +812,14 @@ def write_report(
     md.append("Project A is the cross-session leave-one-run-out (LORO) ablation. Project B "
               "(within-session leave-region-out) is a separate work line and not reported here.\n")
     md.append("## 0. TL;DR\n")
+    md.append(
+        "**Feature stack: leakage-fixed.** This report uses the leakage-fixed feature stack: "
+        f"3 telemetry features ({', '.join('`'+t+'`' for t in config.LEAKAGE_FIXED_TELEMETRY)}) "
+        "plus AP-relative geometry and LiDAR. Five features from the original locked feature stack "
+        "were removed post-hoc as either router-side (target leakage), within-session-only "
+        "(deployment leakage), or constant sentinel (no information). See `MIGRATION_LOG.md` "
+        f"for the full audit trail. (`feature_stack_version = \"{config.FEATURE_STACK_VERSION}\"`).\n"
+    )
     md.append("- **B5 vs B1 Δ_RMSE per fold (overall / in-FOV / out-of-FOV)**:")
     for fold in FOLDS:
         ov = _delta_str(dl.get((fold, "overall")))

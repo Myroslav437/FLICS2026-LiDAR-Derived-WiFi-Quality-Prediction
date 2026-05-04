@@ -817,6 +817,14 @@ def write_report(
 
     # ---- Section 0: TL;DR ----
     md.append("## 0. TL;DR\n")
+    md.append(
+        "**Feature stack: leakage-fixed.** This report uses the leakage-fixed feature stack: "
+        f"3 telemetry features ({', '.join('`'+t+'`' for t in config.LEAKAGE_FIXED_TELEMETRY)}) "
+        "plus position, AP-relative geometry, and LiDAR. Five features from the original locked "
+        "feature stack were removed post-hoc as either router-side (target leakage), "
+        "within-session-only (deployment leakage), or constant sentinel (no information). See "
+        f"`MIGRATION_LOG.md` for the full audit trail. (`feature_stack_version = \"{config.FEATURE_STACK_VERSION}\"`).\n"
+    )
     md.append("- **Δ_LiDAR_within (W2 − W4) per fold (overall / in-FOV / out-of-FOV)**:")
     for fold in FOLDS:
         ov = _delta_str(dl.get((fold, "overall")))

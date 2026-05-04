@@ -6,10 +6,18 @@ For each fold R-k (k ∈ {1..5}):
 
 Buffer-zone variant: drop training rows within `BUFFER_DISTANCE_M` of any
 held-out-region row before the train/val split.
+
+Determinism: the fold-stable seed is derived from a SHA-256 digest of
+`fold_name`, which is reproducible across Python invocations and machines
+(unlike Python's built-in `hash()`, which is randomised per-invocation
+unless `PYTHONHASHSEED=0`). This was previously the
+`scripts.p1_lean_features.det_folds` shim; promoted to the canonical fold
+constructor as part of the leakage-fixed rerun (see MIGRATION_LOG.md).
 """
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 
 import numpy as np
@@ -29,9 +37,15 @@ class WithinFoldSplit:
     buffer_distance_m: float | None  # None unless buffer applied
 
 
+def deterministic_fold_offset(fold_name: str) -> int:
+    """32-bit non-negative offset derived deterministically from fold_name."""
+    digest = hashlib.sha256(fold_name.encode("utf-8")).digest()
+    return int.from_bytes(digest[:4], byteorder="big", signed=False)
+
+
 def _random_train_val_split(train_pool: pd.DataFrame, fold_name: str) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Random 10% validation split with a fold-stable seed."""
-    rng = np.random.default_rng(config.SEED + (hash(fold_name) & 0x7FFFFFFF))
+    """Random 10% validation split with a deterministic, fold-stable seed."""
+    rng = np.random.default_rng(config.SEED + deterministic_fold_offset(fold_name))
     n = len(train_pool)
     n_val = max(1, int(round(n * config.VAL_FRACTION)))
     perm = rng.permutation(n)

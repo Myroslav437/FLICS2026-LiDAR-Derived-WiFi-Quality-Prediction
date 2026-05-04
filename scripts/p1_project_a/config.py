@@ -27,16 +27,24 @@ for _d in (MODELS_DIR, CACHE_DIR, RESULTS_DIR, FIGURES_DIR, TABLES_DIR):
     _d.mkdir(parents=True, exist_ok=True)
 
 
-TELEMETRY_FEATURES = [
+# Leakage-fixed telemetry stack (post-hoc audit, see MIGRATION_LOG.md).
+#
+# Removed (vs the locked full-8 stack):
+#   - load_long, load_mid, load_short: MikroTik router CPU load averages
+#     (FH.7000.[mikrotik].load_*); target leakage from the receiving end of the
+#     same WiFi link the model is predicting.
+#   - battery_value: 0xFFFF CAN-bus sentinel that contributes zero information
+#     within the LiDAR-coverage window (docs/p1_battery_provenance/report.md).
+#   - nns_state: discrete 2/3 navigation-system state that produces a material
+#     within-session shift but no cross-session shift; plausibly a within-session
+#     spatial-mode fingerprint that does not transfer across deployments.
+LEAKAGE_FIXED_TELEMETRY = [
     "speed_mps",
     "turn_rate",
-    "load_long",
-    "load_mid",
-    "load_short",
-    "battery_value",
     "momentary_current_consumption",
-    "nns_state",
 ]
+TELEMETRY_FEATURES = list(LEAKAGE_FIXED_TELEMETRY)
+FEATURE_STACK_VERSION = "leakage_fixed_v1"
 
 LIDAR_SCALAR_FEATURES = [
     "mean_dist_mm",

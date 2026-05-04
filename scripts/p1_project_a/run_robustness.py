@@ -273,8 +273,8 @@ def main() -> None:
     fits_df = pd.DataFrame([dataclasses.asdict(f) for f in fits])
     fits_df.to_parquet(DIAG_FIT_INVENTORY_PATH, index=False)
     print(f"[robust] {len(fits)} new fits + locked baseline; metrics rows = {len(metrics_df)}")
-    print(f"[robust] metrics → {DIAG_METRICS_PATH}")
-    print(f"[robust] fit inventory → {DIAG_FIT_INVENTORY_PATH}")
+    print(f"[robust] metrics -> {DIAG_METRICS_PATH}")
+    print(f"[robust] fit inventory -> {DIAG_FIT_INVENTORY_PATH}")
     print("[robust] (the diagnostic narrative is rendered into results_report.md by build_results_report)")
 
 

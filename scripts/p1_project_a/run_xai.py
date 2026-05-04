@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import time
 
 import numpy as np
@@ -11,10 +12,15 @@ import xgboost as xgb
 from . import config, data_io, folds, training
 
 
+def _det_fold_offset(fold_name: str) -> int:
+    digest = hashlib.sha256(fold_name.encode("utf-8")).digest()
+    return int.from_bytes(digest[:4], byteorder="big", signed=False)
+
+
 def _shap_for_fold(fold_name: str, non_anom: pd.DataFrame) -> pd.DataFrame:
     fold = folds.build_loro_fold(non_anom, fold_name)
     test = fold.test.reset_index(drop=True)
-    rng = np.random.default_rng(config.SEED + hash(fold_name) % (1 << 32))
+    rng = np.random.default_rng(config.SEED + _det_fold_offset(fold_name))
 
     if len(test) > config.SHAP_SUBSAMPLE_LIMIT:
         idx = rng.choice(len(test), size=config.SHAP_SUBSAMPLE_LIMIT, replace=False)

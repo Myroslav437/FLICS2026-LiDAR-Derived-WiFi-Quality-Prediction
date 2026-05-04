@@ -6,6 +6,7 @@ fold whose W4 overall RMSE is closest to the median.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import time
 
@@ -16,6 +17,11 @@ import xgboost as xgb
 from scripts.p1_project_a import training as a_training
 
 from . import config, data_io, folds as folds_mod, run_modeling
+
+
+def _det_fold_offset(fold_name: str) -> int:
+    digest = hashlib.sha256(fold_name.encode("utf-8")).digest()
+    return int.from_bytes(digest[:4], byteorder="big", signed=False)
 
 
 def select_shap_fold(wlro_df: pd.DataFrame) -> tuple[str, str]:
@@ -50,7 +56,7 @@ def run_shap_for_fold(fold_name: str, non_anom_with_region: pd.DataFrame) -> tup
     fold = folds_mod.build_fold(non_anom_with_region, fold_name)
     test = fold.test.reset_index(drop=True)
 
-    rng = np.random.default_rng(config.SEED + (hash(fold_name) & 0x7FFFFFFF))
+    rng = np.random.default_rng(config.SEED + _det_fold_offset(fold_name))
     if len(test) > config.SHAP_SUBSAMPLE_LIMIT:
         idx = rng.choice(len(test), size=config.SHAP_SUBSAMPLE_LIMIT, replace=False)
         idx.sort()

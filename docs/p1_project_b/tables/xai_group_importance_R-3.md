@@ -4,8 +4,8 @@
 
 | Group | Σ mean\|SHAP\| (dB) | # features |
 |---|---:|---:|
-| AP-relative | 5.640 | 5 |
-| Telemetry | 4.055 | 8 |
-| Position | 2.580 | 2 |
-| LiDAR sectoral | 1.508 | 14 |
-| LiDAR scalar | 0.491 | 5 |
+| AP-relative | 6.281 | 5 |
+| Position | 4.754 | 2 |
+| LiDAR sectoral | 2.822 | 14 |
+| Telemetry | 2.354 | 3 |
+| LiDAR scalar | 1.632 | 5 |

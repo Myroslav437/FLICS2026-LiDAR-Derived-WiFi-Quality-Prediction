@@ -328,13 +328,22 @@ def write_report(
     md: list[str] = []
     md.append("# Project B — R-4 focused diagnostic\n")
     md.append(
-        "Tests whether R-4's main-run +1.09 dB Δ_LiDAR_within (in-FOV) survives two orthogonal "
+        "Tests whether R-4's main-run Δ_LiDAR_within (in-FOV) survives two orthogonal "
         "corrections: a 1 m buffer-zone exclusion (spatial-autocorrelation control) and a less-"
         "aggressive hyperparameter config (H1: max_depth=4).\n"
     )
 
     # ---- TL;DR ----
     md.append("## 0. TL;DR\n")
+    md.append(
+        "**Feature stack: leakage-fixed.** This diagnostic uses the leakage-fixed feature stack: "
+        f"3 telemetry features ({', '.join('`'+t+'`' for t in config.LEAKAGE_FIXED_TELEMETRY)}) "
+        "plus position, AP-relative geometry, and LiDAR. The 'main-run +1.09 dB' baseline cited "
+        "in §1 below is the locked-stack number from the pre-leakage-fix Project B run; the "
+        "leakage-fixed re-run produces the locked-no-buffer number reproduced in this diagnostic, "
+        "and that is the number from which the four-corrections framing is built. See "
+        f"`MIGRATION_LOG.md`. (`feature_stack_version = \"{config.FEATURE_STACK_VERSION}\"`).\n"
+    )
     md.append(
         f"- **Buffer-zone Δ_LiDAR_within (in-FOV) on R-4**: {buffer_delta_in_fov:+.3f} dB "
         f"(vs main-run no-buffer {baseline_delta_in_fov:+.3f} dB, also reproduced here)."

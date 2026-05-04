@@ -74,9 +74,10 @@ def evaluate_predictions(preds: pd.DataFrame) -> list[dict]:
     in_fov = preds["is_AP_in_FOV"].to_numpy(dtype=bool)
 
     rows: list[dict] = []
+    fsv = config.FEATURE_STACK_VERSION
 
-    rows.append({"stratum": "overall", **stratum_metrics(y, p)})
-    rows.append({"stratum": "in_fov", **stratum_metrics(y[in_fov], p[in_fov])})
-    rows.append({"stratum": "out_of_fov", **stratum_metrics(y[~in_fov], p[~in_fov])})
+    rows.append({"stratum": "overall", "feature_stack_version": fsv, **stratum_metrics(y, p)})
+    rows.append({"stratum": "in_fov", "feature_stack_version": fsv, **stratum_metrics(y[in_fov], p[in_fov])})
+    rows.append({"stratum": "out_of_fov", "feature_stack_version": fsv, **stratum_metrics(y[~in_fov], p[~in_fov])})
 
     return rows
