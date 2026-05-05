@@ -1,7 +1,3 @@
-%% paper.tex
-%% AIDI 2026 Workshop @ FLICS 2026 — IEEE conference template
-%% Compiled with: pdflatex paper.tex; bibtex paper; pdflatex paper.tex (x2)
-
 \documentclass[conference]{IEEEtran}
 \IEEEoverridecommandlockouts
 \usepackage{cite}
@@ -14,6 +10,7 @@
 \usepackage{array}
 \usepackage{url}
 \usepackage{siunitx}
+\usepackage{tabularx}
 
 % Convenience macros
 \newcommand{\dlidar}{\ensuremath{\Delta_{\mathrm{LiDAR}}}}
@@ -23,7 +20,7 @@
 
 \begin{document}
 
-\title{LiDAR-Augmented WiFi Signal Strength Prediction:\\A Use Case Study on Industrial AGVs}
+\title{LiDAR-Augmented Wi\nobreakdash-Fi Signal Strength Prediction: A Use-Case Study on Industrial AGVs}
 
 \author{%
 \IEEEauthorblockN{Myroslav Mishchuk\textsuperscript{1,2},
@@ -38,1117 +35,513 @@
 \maketitle
 
 \begin{abstract}
-Industrial automated guided vehicles (AGVs) require predictable WiFi
-connectivity for safety telemetry and fleet coordination, but signal
-strength in industrial workspaces is hard to predict from access point
-(AP) distance alone due to waveguiding, blockage, and multipath. Since
-industrial AGVs are routinely equipped with safety LiDARs that capture
-the local environmental geometry, the natural hypothesis is that
-LiDAR-derived features can augment WiFi signal strength prediction
-beyond what AP-relative geometry alone provides. This paper provides
-a use case study on data gathered from a deployed industrial AGV
-(three routes, 681,593 matched samples) using cross-session and
-within-session generalization protocols with five robustness
-controls: an XGBoost
-hyperparameter sweep, a LightGBM framework cross-check, a 1-meter
-spatial buffer-zone exclusion, a depth-constrained over-fitting check,
-and LiDAR-feature permutation tests. Across all configurations,
-ego-frame LiDAR features did not improve on a 15-feature baseline of
-position, telemetry, and AP-relative geometry: the cleanest LiDAR-free
-model achieves an RMSE of 1.99 dB on signal\_power, approximately 3 dB
-below the dataset's noise floor. The paper provides the first
-controlled empirical study of LiDAR-augmented WiFi signal strength
-prediction on industrial AGVs and offers practical deployment guidance
-for fleet operators.
+Industrial automated guided vehicles (AGVs) require reliable Wi\nobreakdash-Fi connectivity for safety telemetry, traffic management, mission updates, and remote intervention. However, signal strength in industrial workspaces is hard to predict from the access point (AP) distance alone due to waveguiding, blockage, and multipath. Since industrial AGVs are equipped with safety LiDARs that capture environmental geometry, the natural hypothesis is that LiDAR-derived features can improve Wi\nobreakdash-Fi signal strength prediction over what AP-relative geometry alone provides. This paper presents a use-case study of LiDAR-augmented signal strength prediction on data gathered from a deployed industrial AGV (three routes, 681,593 matched samples). Two evaluation protocols are used: cross-session and within-session generalization. Five robustness controls are applied: an XGBoost hyperparameter sweep, a LightGBM framework cross-check, a 1-meter spatial buffer-zone exclusion, a depth-constrained overfitting check, and LiDAR-feature permutation tests. Across the configurations tested, ego-frame LiDAR features did not contribute robust value over a 10-feature baseline of position, telemetry, and AP-relative geometry; the only nominal positive (the F3 cross-session fold, trained and tested across independently-aligned reference frames) was diagnosed by the permutation control as marginal-distribution-driven rather than row-aligned LiDAR signal. The lowest-RMSE LiDAR-free model achieves an RMSE of 3.96 dB on \texttt{signal\_power}, approximately 1 dB below the dataset's noise floor. The paper presents the first empirical study of LiDAR-augmented Wi\nobreakdash-Fi signal strength prediction for industrial AGVs and identifies a minimal feature set sufficient for sub-noise-floor within-session prediction in the studied scenario.
 \end{abstract}
 
 \begin{IEEEkeywords}
-Industrial AGV, WiFi link quality, LiDAR, signal-power prediction,
-XGBoost, SHAP, explainable AI (XAI)
+industrial AGV, Wi\nobreakdash-Fi link quality, LiDAR, signal power prediction, XGBoost, SHAP, eXplainable AI (XAI)
 \end{IEEEkeywords}
 
-%==========================================================================
-\section{Introduction}\label{sec:intro}
-%==========================================================================
 
-With the ongoing adoption of Industry 4.0 and 5.0 paradigms,
-automated guided vehicles (AGVs) are increasingly deployed in
-warehouse, manufacturing, and distribution
-environments~\cite{fragapane2021planning}. Reliable wireless
-communication supports the coordination functions of an AGV fleet,
-including protective telemetry, traffic management, mission updates,
-and remote intervention; unpredictable signal quality can translate
-into idle time, near-collisions, or unplanned safety stops. WiFi
-remains the dominant choice for these links because of its cost,
-infrastructure availability, and coverage characteristics, but the
-conditions under which industrial WiFi performs reliably differ from
-those of office or residential
-deployments~\cite{cena2025wifi,schmieder2023agvdatasets}. Metallic
-shelving, structural columns, loading equipment, and moving forklifts
-together produce a propagation environment dominated by waveguiding,
-blockage, and multipath. Empirical log-distance models, even with
-precisely surveyed access point (AP) coordinates, fit indoor
-industrial measurements with considerably more residual variance than
-outdoor or campus deployments~\cite{cena2025wifi,formis2025wifi}.
-Field-deployable predictors of received signal power along a planned
-AGV trajectory are therefore operationally valuable: they let a fleet
-manager pre-compute coverage, flag risk zones, and schedule jobs
-around predicted dropout regions~\cite{gulia2025evowisva}.
+\section{Introduction}
+\label{sec:intro}
 
-Industrial AGVs designed to comply with ISO 3691-4~\cite{iso3691-4}
-are typically equipped with 2D safety laser scanners (commonly
-referred to as 2D safety LiDARs) for personnel detection and
-protective-field monitoring; in many platforms the same scanners
-also feed the on-board localization stack. Although their primary
-function is safety, these scanners continuously produce a wide-angle
-range scan of the AGV's local environment, capturing corridor
-geometry, blockage along arbitrary directions, and clutter density.
-Indoor WiFi propagation is shaped by exactly these geometric
-properties, which motivates the question of whether LiDAR-derived
-environmental features can augment a signal-strength prediction
-model beyond what AP-relative geometry alone provides --- and whether
-the added information justifies the integration effort. Recent work
-has shown that point-cloud-derived environmental features can
-improve mmWave-band channel
-prediction~\cite{ohta2023pointcloud,nist2024mmwave,zhang2025mmlscm,
-clark2022propeml}, and SHAP-based attribution has been combined with
-gradient-boosted regression for explainable cellular path-loss
-models~\cite{xu2025xgboost5g,kiouvrekis2025explainable,
-balogun2022satelliteshap}. Existing AGV WiFi link-quality
-predictors~\cite{formis2025wifi,formis2024deep,colletto2023ann} use
-telemetry alone and do not incorporate environmental geometry. To
-our knowledge, the intersection of LiDAR-derived environmental
-features, WiFi link-quality prediction, SHAP-based explanation, and
-industrial-AGV deployment is not yet explored
-(Section~\ref{sec:rw}).
+With the ongoing adoption of Industry 4.0 and 5.0 paradigms, automated guided vehicles (AGVs) are increasingly deployed in warehouse, manufacturing, and distribution environments~\cite{fragapane2021planning}. Reliable wireless communication supports the coordination functions of AGV fleets, including safety telemetry, traffic management, mission updates, and remote intervention. Thus, unpredictable signal quality can result in idle time, near-collisions, or unplanned safety stops. Wi\nobreakdash-Fi remains the dominant choice for these links due to its cost, infrastructure availability, and coverage characteristics, but the conditions under which industrial Wi\nobreakdash-Fi performs reliably differ from those of office or residential installations~\cite{cena2025wifi,schmieder2023agvdatasets}. Metallic shelving, structural columns, loading equipment, and moving forklifts produce a propagation environment dominated by waveguiding, blockage, and multipath. Empirical log-distance models, even with precisely measured access point (AP) coordinates, fit indoor industrial measurements with considerably more residual variance than outdoor or campus deployments~\cite{cena2025wifi,formis2025wifi}. Field-deployable predictors of received signal strength along a planned AGV trajectory are therefore operationally valuable: they let the fleet coordination software pre-compute coverage, flag risk zones, and schedule jobs around predicted dropout regions~\cite{gulia2025evowisva}.
 
-This paper presents a use case study, conducted on data gathered
-from a deployed industrial AGV across three routes, that examines
-whether ego-frame LiDAR features augment such a baseline. The
-dataset, source code, analysis scripts, and result reports are
-released to support reproduction and follow-up
-work\footnote{Dataset, source code, analysis scripts, and reports:
-\mbox{\url{https://github.com/Myroslav437/FLICS2026-LiDAR-Derived-WiFi-Quality-Prediction}}.}.
+Industrial AGVs compliant with ISO 3691-4~\cite{iso3691-4} are typically equipped with 2D LiDARs for personnel detection, protective field monitoring, and on-board localization. These scanners continuously produce a wide-angle range scan of the AGV's local environment, capturing corridor geometry, blockage along arbitrary directions, and clutter density. Indoor Wi\nobreakdash-Fi propagation is primarily shaped by these geometric properties, which motivates the question of whether LiDAR-derived environmental features can improve signal strength prediction beyond what AP-relative geometry alone provides, and whether the added information justifies the integration effort. Recent work has shown that point-cloud-derived environmental features can improve mmWave-band channel prediction~\cite{ohta2023pointcloud,nist2024mmwave,zhang2025mmlscm,clark2022propeml}. Existing AGV Wi\nobreakdash-Fi link quality predictors~\cite{formis2025wifi,formis2024deep,colletto2023ann} use telemetry alone and do not incorporate environmental geometry. To our knowledge, the intersection of LiDAR-derived environmental features, Wi\nobreakdash-Fi link quality prediction, and industrial AGV deployment has not been explored.
 
-The paper addresses the following research questions (RQ):
+This paper presents a use-case study, conducted on data gathered from a deployed industrial AGV across three routes, that examines whether ego-frame LiDAR features improve over a baseline that uses only AGV position, telemetry, and AP-relative geometry. 
+The paper addresses the following research questions (RQs):
 \begin{itemize}
-\setlength\itemsep{2pt}
-\item \textbf{RQ1.} Do LiDAR-derived environment features improve
-  received signal-power prediction over a baseline of AGV position,
-  telemetry, and AP-relative geometry, in cross-session
-  generalization?
-\item \textbf{RQ2.} Do LiDAR-derived environment features improve
-  prediction in within-session leave-region-out generalization, after
-  controls for spatial autocorrelation and tree-depth over-fitting?
-\item \textbf{RQ3.} Are the observed effects robust to feature-group
-  substitution, hyperparameter and framework choice, and to a
-  LiDAR-feature permutation control?
+    \item \textbf{RQ1.} Do LiDAR-derived environment features improve received signal strength prediction over a baseline of AGV position, telemetry, and AP-relative geometry, in cross-session generalization?
+    \item \textbf{RQ2.} Do LiDAR-derived environment features improve prediction in within-session leave-region-out (LRO) generalization, after controls for spatial autocorrelation and tree-depth overfitting?
+    \item \textbf{RQ3.} Are the observed effects robust to feature group substitution, hyperparameter and framework choice, and to a LiDAR-feature permutation control?
 \end{itemize}
 
 The contributions of this paper are summarized as follows:
 \begin{itemize}
-\setlength\itemsep{2pt}
-\item The first controlled empirical evaluation of LiDAR-augmented
-  WiFi signal strength prediction on data gathered from a deployed
-  industrial AGV is performed.
-\item A feature-group ablation procedure is developed that separates
-  the case where a feature group provides no useful information from
-  the case where it is substitutable for another retained group.
-\item Practical deployment guidance is provided for industrial AGV
-  operators on the minimal feature set required for accurate
-  within-session signal-power prediction in the studied scenario.
+    \item The first controlled empirical evaluation of LiDAR-augmented Wi\nobreakdash-Fi signal strength prediction on data gathered from a deployed industrial AGV is performed.
+    \item A feature group ablation procedure is performed that separates the case where a feature group provides no useful information from the case where it is substitutable for another retained group.
+    \item A minimal feature set is identified that is sufficient for accurate within-session signal strength prediction in the studied scenario.
 \end{itemize}
 
-The remainder of the paper is organized as follows.
-Section~\ref{sec:rw} reviews related work. Section~\ref{sec:data}
-describes the dataset, its preparation, and the feature stack.
-Section~\ref{sec:method} presents the experimental methodology.
-Sections~\ref{sec:cross-session} and~\ref{sec:within-session} report
-the cross-session and within-session experiments, respectively.
-Section~\ref{sec:shap} presents the feature attribution analysis.
-Section~\ref{sec:discussion} discusses the implications and
-limitations, and Section~\ref{sec:conclusion} concludes.
+The remainder of the paper is organized as follows. Section~\ref{sec:rw} reviews related work. Section~\ref{sec:data} describes the dataset, its preparation, and the feature stack. Section~\ref{sec:method} presents the experimental methodology. Sections~\ref{sec:cross-session} and~\ref{sec:within-session} report the cross-session and within-session experiments, respectively. Section~\ref{sec:shap} presents the feature attribution analysis. Section~\ref{sec:discussion} discusses the implications and limitations, and Section~\ref{sec:conclusion} concludes.
+The dataset, source code, analysis scripts, and result reports are released to support reproduction and follow-up work\footnote{Dataset, source code, analysis scripts, and reports: \url{https://github.com/Myroslav437/FLICS2026-LiDAR-Derived-WiFi-Quality-Prediction}.}.
 
-%==========================================================================
-\section{Related Work}\label{sec:rw}
-%==========================================================================
+\section{Related Work}
+\label{sec:rw}
 
-A coherent body of work on industrial WiFi link-quality prediction
-has used telemetry-only features such as recent received-power
-history, throughput, and protocol counters, without explicit
-modelling of the surrounding workspace. Linear combinations of
-exponential moving averages~\cite{formis2023moving} and shallow
-neural networks~\cite{colletto2023ann,scanzio2022ann} reach useful
-accuracy on warehouse-deployed equipment, and recent extensions
-replace the shallow models with deep
-architectures~\cite{formis2024deep,formis2025wifi}; the feature
-inventory across these works remains essentially telemetric. Broader
-surveys of machine learning for IEEE
-802.11~\cite{wilhelmi2024aiml,szott2022wifimeetsml} catalogue similar
-feature sets and identify environmental modelling as an
-under-investigated direction, particularly in industrial deployments
-where waveguiding and blockage dominate; the fundamental challenges
-of WiFi reliability for moving equipment in such environments are
-also documented in~\cite{cena2025wifi}. The cumulative picture is
-that telemetry features alone leave residual variance that the prior
-art has not been able to explain away, which motivates the search
-for additional features that capture environmental structure.
+A coherent body of work on industrial Wi\nobreakdash-Fi link quality prediction has used telemetry-only features without explicitly modeling the surrounding workspace. Linear combinations of exponential moving averages~\cite{formis2023moving} and shallow neural networks~\cite{colletto2023ann,scanzio2022ann} reach competitive accuracy on warehouse-deployed equipment, and recent extensions replace shallow models with deep architectures~\cite{formis2024deep,formis2025wifi}; the feature inventory across these works remains essentially telemetric. Broader surveys on machine learning for IEEE 802.11~\cite{wilhelmi2024aiml,szott2022wifimeetsml} catalog similar feature sets and identify environmental modeling as an under-investigated direction, particularly in industrial deployments where waveguiding and blockage dominate. The fundamental challenges of Wi\nobreakdash-Fi reliability for moving equipment in such environments are also documented in~\cite{cena2025wifi}. The cumulative picture is that telemetry features alone leave residual variance that prior state-of-the-art does not account for, motivating the search for additional features that capture environmental structure.
 
-Recent work has explored that direction predominantly in the
-millimetre-wave (mmWave) band rather than indoor WiFi. Raw point
-clouds have been used to anticipate line-of-sight blockage in mmWave
-networks~\cite{ohta2023pointcloud}; a NIST measurement-based
-predictor fuses LiDAR scans with panoramic imagery in a deep
-regressor for 60\,GHz channel parameters~\cite{nist2024mmwave}; a
-multi-modal neural radio radiance field combines reference signal
-received power (RSRP) with LiDAR~\cite{zhang2025mmlscm}; PropEM-L
-encodes raw point clouds for communication-aware exploration in
-outdoor multi-robot systems~\cite{clark2022propeml}; and
-GPU-accelerated point-cloud ray tracing has been demonstrated for
-outdoor channel prediction~\cite{guo2021gpuraytrace}. The reported
-gains are substantial, but the mmWave regime differs materially from
-the 2.4/5\,GHz indoor industrial case of interest here: mmWave is
-dominated by direct-path attenuation and discrete blockage events,
-whereas industrial WiFi is shaped by waveguiding through corridors
-and constructive/destructive multipath at length scales much larger
-than typical LiDAR feature scales. Whether geometric features that
-succeed in mmWave transfer to industrial WiFi is therefore an open
-empirical question.
+The use of geometric environmental features for radio-channel prediction has been explored most extensively in the millimeter-wave (mmWave) band. The work~\cite{ohta2023pointcloud} uses raw LiDAR point clouds to anticipate line-of-sight blockage by pedestrians in 60\,GHz wireless LAN, demonstrating that point cloud-based prediction is feasible at indoor scales without the privacy concerns of camera-based methods. The authors of~\cite{nist2024mmwave} fuse LiDAR scans with panoramic imagery in a PointNet-based regressor for prediction of mmWave channel parameters, outperforming uncalibrated 3GPP indoor-hotspot baselines.
+A complementary approach in~\cite{zhang2025mmlscm} introduces a multi-modal neural radio radiance field that combines reference signal received power (RSRP) measurements with LiDAR point clouds for localized statistical channel modeling, reporting improved reconstruction accuracy and noise robustness over RSRP-only baselines. Outside the mmWave band, the PropEM-L framework~\cite{clark2022propeml} encodes raw point clouds for communication-aware multi-robot exploration and reports up to 44\% improvement in received signal strength prediction over a log-distance baseline in subterranean environments. GPU-accelerated point-cloud ray tracing has also been demonstrated as a complementary technique for outdoor channel prediction~\cite{pang2021gpuraytrace}. The reported gains across these works are substantial, but the propagation regimes differ from the 2.4/5\,GHz indoor industrial case: mmWave is dominated by direct-path attenuation and discrete blockage events, whereas industrial Wi\nobreakdash-Fi is shaped by waveguiding through corridors and constructive/destructive multipath at length scales much larger than typical LiDAR feature scales. Whether geometric features that succeed in mmWave or in subterranean settings transfer to industrial Wi\nobreakdash-Fi is therefore an open empirical question.
 
-A separate line of work has applied explainable AI --- in particular,
-SHAP-based attribution --- to gradient-boosted path-loss models.
-XGBoost with SHAP has been used for 5G urban path-loss prediction
-with multi-modal inputs~\cite{xu2025xgboost5g};
-the prediction accuracy and explanation power of SHAP-based and
-additive models have been compared in a university-campus
-environment~\cite{kiouvrekis2025explainable}; and hand-crafted versus
-convolutional features extracted from satellite imagery have been
-compared for outdoor path-loss
-prediction~\cite{balogun2022satelliteshap}. Across these works the
-regression target is outdoor cellular or campus WiFi, and the
-environmental modality is imagery rather than LiDAR; the
-methodology is transferable, but the transfer to indoor industrial
-AGV deployments has not, to the best of our knowledge, been
-carried out.
+Dedicated LiDAR/Wi\nobreakdash-Fi sensor-fusion work in the AGV domain has so far targeted localization, SLAM, mapping, and navigation drift compensation~\cite{li2025lidaragv,nguyen2022wifilidar}, not link quality prediction. The above literature review reveals a gap at the intersection of LiDAR-derived environmental features, Wi\nobreakdash-Fi link quality prediction, and industrial AGV deployment. The use-case study presented in this paper aims to address that gap by providing the experimental controls necessary to support a credible deployment-relevant conclusion.
 
-Dedicated LiDAR/WiFi sensor-fusion work in the AGV domain has so far
-targeted localization, simultaneous localization and mapping, and
-navigation drift compensation~\cite{li2025lidaragv,
-nguyen2022wifilidar}, not link-quality prediction. This line of work
-confirms that the two sensor streams are routinely available
-together on production AGVs --- which makes the augmented prediction
-investigated here practically attractive --- but does not address
-the prediction question.
 
-To the best of our knowledge, the intersection of LiDAR-derived
-environmental features, WiFi link-quality prediction, SHAP-based
-explanation, and industrial-AGV deployment has not yet been studied
-empirically. The use case study presented in this paper is intended
-to contribute to that gap with the experimental controls necessary
-to support a credible deployment-relevant conclusion.
+\section{Dataset Collection and Preparation}
+\label{sec:data}
 
-%==========================================================================
-\section{Dataset Collection and Preparation}\label{sec:data}
-%==========================================================================
+The experimental platform is a single industrial AGV equipped with a front-facing Leuze RSL\,400 2D safety laser scanner (270$^{\circ}$ nominal angular range, operated at 0.2$^{\circ}$ angular resolution, $\sim$25 Hz scan rate) and a Navitrol on-board navigation and supervision system (NNS) by Navitec Systems. The facility is served by a single Wi\nobreakdash-Fi AP whose coordinates were measured in the AGV's reference frame.
+Three data-gathering sessions were collected on a deployed AGV. The sessions cover three distinct routes, summarized in Table~\ref{tab:sessions}. 
 
-This section describes the experimental platform, the data-gathering
-campaign, the pre-processing steps required to convert raw streams
-into a training-ready dataset, and the feature stack supplied to the
-predictive models.
-
-%-------------------------------------------------------------------- 3.1
-\subsection{Platform and data-gathering campaign}
-The experimental platform is a single industrial AGV equipped with a
-front-facing Leuze RSL\,400 270$^{\circ}$ 2D safety laser scanner
-(operated at 0.2$^{\circ}$ angular resolution; 1{,}350 active beams
-in a 2{,}700-slot buffer) and a Navitrol on-board navigation and
-supervision system (NNS) by Navitec Systems. Sample rates of the
-LiDAR, telemetry, and NNS streams are summarized in
-Table~\ref{tab:sessions}. The set of features extracted from the raw
-streams and supplied to the predictive models is described in
-Section~\ref{sec:features} and listed in
-Table~\ref{tab:features}. The facility is served by a single WiFi
-access point (AP) whose coordinates are surveyed in the AGV's
-reference frame to within several centimetres.
-
-Three data-gathering sessions were collected on a deployed AGV. The
-sessions cover three distinct routes, summarized in
-Table~\ref{tab:sessions} and visualized in
-Fig.~\ref{fig:trajectories}. S1 and S2 share the route's reference
-frame; S3 was recorded on a different route in a different sub-area
-of the facility. S1 is the largest session, both in duration and in
-spatial coverage, and is used for the within-session experiments.
-
-\begin{table}[!t]
-\caption{Three-session dataset overview.}
-\label{tab:sessions}
-\centering
-\renewcommand{\arraystretch}{1.0}
-\setlength{\tabcolsep}{4pt}
-\footnotesize
-\begin{tabular}{l c c c c c}
-\toprule
-Session & $n_{\text{pairs}}$ & dur.\ (h) & $\overline{P}$ (dBm) & $\sigma_P$ (dB) & motion \% \\
-\midrule
-S1    & 280{,}025 & 3.19 & $-36.91$ & 10.52 & 37.6 \\
-S2    & 168{,}940 & 1.93 & $-39.66$ & 7.35  & 39.3 \\
-S3    & 232{,}628 & 2.75 & $-31.07$ & 6.22  & 61.3 \\
-\midrule
-total & 681{,}593 & 7.87 & --- & --- & --- \\
-\bottomrule
-\end{tabular}
-\\[3pt]
-\raggedright
-\footnotesize
-LiDAR scans at $\sim$25\,Hz; telemetry at 31\,Hz;
-NNS pose at 4.4\,Hz. ``Motion \%'' is the fraction of recorded time
-during which the AGV is motion-active ($|\texttt{speed\_mps}| >
-0.1\,\mathrm{m/s}$).
-\vspace{-0.6em}
+\begin{table}[!htbp]
+    \caption{Three-session dataset overview}
+    \label{tab:sessions}
+    \centering
+    \renewcommand{\arraystretch}{1.0}
+    \setlength{\tabcolsep}{4pt}
+    \footnotesize
+    \begin{tabular}{l c c c c c c}
+        \toprule
+        Session & $n_{\text{pairs}}$ & dur.\ (h) & $f_{\text{tel}}$ (Hz) & $\overline{P}$ (dBm) & $\sigma_P$ (dB) & motion \% \\
+        \midrule
+        S1    & 280{,}025 & 3.19 & 31  & $-36.91$ & 10.52 & 37.6 \\
+        S2    & 168{,}940 & 1.93 & 31  & $-39.66$ & 7.35  & 39.3 \\
+        S3    & 232{,}628 & 2.75 & 4.4 & $-31.07$ & 6.22  & 61.3 \\
+        \midrule
+        total & 681{,}593 & 7.87 & --- & --- & --- & --- \\
+        \bottomrule
+    \end{tabular}
+    \\[3pt]
+    \raggedright
+    \footnotesize
+    $f_{\text{tel}}$ is the on-board telemetry stack rate. ``Motion \%'' is the fraction of recorded time during which the AGV is motion-active ($|\texttt{speed\_mps}| > 0.1\,\mathrm{m/s}$).
 \end{table}
 
-% TODO: figure showing AGV trajectory coloured by signal_power, three sessions side by side
-\begin{figure}[!t]
-\centering
-% \includegraphics[width=\columnwidth]{figs/trajectories_signalpower.pdf}
-\fbox{\parbox[c][2.6cm][c]{0.92\columnwidth}{\centering\itshape
-[Placeholder Fig.~\ref{fig:trajectories}: AGV trajectory in the
-session reference frame, coloured by \texttt{signal\_power}, for the
-three sessions side-by-side. Hot/cold zones are visibly persistent
-within each session.]}}
-\caption{AGV trajectory coloured by \texttt{signal\_power}.}
-\label{fig:trajectories}
-\vspace{-1.0em}
+S1 is the largest session, both in duration and in spatial coverage, and is used for the within-session experiments. S1 and S2 record the on-board telemetry stack at 31\,Hz; S3 at the slower 4.4\,Hz, which is addressed by cadence-matching in the cross-session experiment (Section~\ref{sec:cross-session}).
+The mean per-session \texttt{signal\_power} ranges from $-39.66$ to $-31.07$\,dBm and varies most strongly within S1 ($\sigma_P = 10.52\dB$).
+The persistence of high- and low-signal regions along each route is visible in Fig.~\ref{fig:trajectories}. The within-session contrast is large enough that any deployment-grade predictor must resolve well below it.
+\vspace{-10pt}
+\begin{figure}[!htbp]
+    \centering
+    \includegraphics[width=\columnwidth]{docs/paper/img/trajectories_signalpower.png}
+    \caption{AGV trajectory coloured by \texttt{signal\_power}. S1 and S2 share a common coordinate reference frame — equal coordinates correspond to the same physical location across the two sessions. S3 was mapped against an independently aligned frame.}
+    \label{fig:trajectories}
 \end{figure}
+\vspace{-6pt}
 
-%-------------------------------------------------------------------- 3.2
 \subsection{Time synchronization}
-LiDAR scans and telemetry samples originate from independent
-hardware and software stacks with their own clocks. Even moderate
-temporal drift between the two streams biases any subsequent
-learning, because LiDAR-derived features would describe a slightly
-different position from the one the telemetry suggests. Time
-alignment is therefore a prerequisite for the use case study and is
-performed before any feature engineering.
+LiDAR scans and telemetry samples originate from independent hardware and software stacks with their own clocks. Even moderate temporal drift between the two streams biases any subsequent learning, because LiDAR-derived features would describe a slightly different position from the one the telemetry suggests. Time alignment is, therefore, a prerequisite for the use-case study and is performed before any feature engineering. 
+A per-session offset $\hat{\tau}$ is estimated as the value that maximizes the cross-correlation between a telemetry signature and a LiDAR-side scan-to-scan dissimilarity signal, computed on a common 50\,Hz grid with parabolic peak refinement. The estimation is performed once per session, and the resulting confidence interval is quantified via the moving-block bootstrap. Fig.~\ref{fig:timesync} shows the cross-correlation curve for one session and the estimated peak.
 
-A per-session offset $\hat{\tau}$ is estimated as the value that
-maximizes the cross-correlation between a telemetry signature and a
-LiDAR-side scan-to-scan dissimilarity signal, computed on a common
-50\,Hz grid with parabolic peak refinement. The estimation is
-performed once per session, and the resulting confidence interval is
-quantified via moving-block bootstrap. The hypothesis that a single
-offset applies to all three sessions is then tested against the
-per-session estimates with Cochran's $Q$ test ($Q = 8.06$, $df = 2$,
-$p = 0.018$); the test rejects the equal-offsets hypothesis, so
-per-session offsets are used in the rest of the pipeline. The
-estimated offsets, applied as constant per-session shifts to align
-the two streams, are
-$\hat{\tau}_{\mathrm{S}1} = +0.250$\,s,
-$\hat{\tau}_{\mathrm{S}2} = +0.432$\,s, and
-$\hat{\tau}_{\mathrm{S}3} = +0.879$\,s. After alignment and joining,
-97.0\% of LiDAR scans (681{,}593 of 702{,}624) have a successfully
-matched telemetry sample and are retained in the training-ready
-dataset. Fig.~\ref{fig:timesync} shows the cross-correlation curve
-for one session and the estimated peak.
-
-% TODO: figure showing time-sync result on one session
-\begin{figure}[!t]
-\centering
-% \includegraphics[width=\columnwidth]{figs/timesync.pdf}
-\fbox{\parbox[c][2.4cm][c]{0.92\columnwidth}{\centering\itshape
-[Placeholder Fig.~\ref{fig:timesync}: cross-correlation between the
-telemetry signature and the LiDAR-side scan-to-scan dissimilarity
-signal, with the bootstrap-estimated peak marked, on one session.]}}
-\caption{Time synchronization between LiDAR and telemetry streams.}
-\label{fig:timesync}
-\vspace{-1.0em}
+\begin{figure}[!htbp]
+    \centering
+    \includegraphics[width=\columnwidth]{docs/paper/img/timesync_xcorr.png}
+    \caption{Time synchronization between LiDAR and telemetry streams: (a) normalized cross-correlation between the telemetry signature and the LiDAR scan-to-scan dissimilarity signal; (b) local
+    shape of each peak, centered at the corresponding $\hat{\tau}$. Positive $\tau$ corresponds to LiDAR lagging telemetry.}
+    \label{fig:timesync}
 \end{figure}
 
-%-------------------------------------------------------------------- 3.3
-\subsection{Anomaly handling}\label{sec:anomaly}
-The downstream models use the AGV's reported position $(x_m, y_m)$
-to compute every AP-relative feature. When the on-board localization
-is struggling --- typically during initialization, after a manual
-reposition of the AGV, in regions with feature-poor environments, or
-under sensor degradation --- the reported position becomes
-unreliable, and so do the features derived from it. Such rows must
-be excluded so that the feature derivation remains physically
-meaningful.
+The hypothesis that a single offset applies to all three sessions is tested against the per-session estimates with Cochran's $Q$ test ($Q = 8.06$, $df = 2$, $p = 0.018$); the test rejects the equal-offsets hypothesis, so per-session offsets are used.  Within each session, two complementary stability tests support the use of a single constant offset. A half-split re-estimation, in which $\hat{\tau}$ is recomputed independently on the first and second half of each session, agrees within 95\% confidence intervals (CIs) on all three sessions, with a maximum half-to-half $|\Delta\hat{\tau}| = 0.178$\,s on S1. A sliding-window drift fit, in which $\hat{\tau}$ is recomputed on overlapping 5--10\,min windows and regressed against window-center wall-clock time, yields per-session slopes between $-1.4$ and $-0.6$\,ms/min ($p \ge 0.075$ on every session), with the accumulated within-session drift bounded by each session's bootstrap $\sigma_{\text{RMSE}}$ on $\hat{\tau}$.
 
-The NNS exposes a position-confidence score
-\texttt{nns\_position\_confidence} on a 0--100 scale, with a high
-value indicating that NNS estimates its own pose to be reliable. The
-distribution of this score across the entire dataset is sharply
-bimodal (Fig.~\ref{fig:confidence-hist}): a narrow high-confidence
-mode at 95--100, where the localization is trustworthy, and a smaller
-low-confidence mode at 19--23, where it is not. A 5-bin moving average
-of the histogram identifies a clear saddle between the two modes at
-$T^{\star} = 35$. Rows with confidence below this threshold are
-excluded from training and evaluation. The threshold removes 74{,}429
-of the 681{,}593 matched samples (10.92\%) and leaves the remaining
-89.08\% for downstream use.
 
-% TODO: figure showing the bimodal confidence histogram with T* threshold marked
-\begin{figure}[!t]
-\centering
-% \includegraphics[width=\columnwidth]{figs/confidence_hist.pdf}
-\fbox{\parbox[c][2.2cm][c]{0.92\columnwidth}{\centering\itshape
-[Placeholder Fig.~\ref{fig:confidence-hist}: histogram of
-\texttt{nns\_position\_confidence} across the full dataset (bimodal),
-with the saddle threshold $T^{\star} = 35$ marked.]}}
-\caption{Distribution of \texttt{nns\_position\_confidence} and the
-exclusion threshold $T^{\star} = 35$.}
-\label{fig:confidence-hist}
-\vspace{-1.0em}
+
+The estimated offsets, applied as constant per-session shifts to align the two streams, are $\hat{\tau}_{\mathrm{S}1} = +0.250$\,s, $\hat{\tau}_{\mathrm{S}2} = +0.432$\,s, and $\hat{\tau}_{\mathrm{S}3} = +0.879$\,s. After alignment and joining, 97.0\% of LiDAR scans (681{,}593 of 702{,}624) have a successfully matched telemetry sample and are retained in the training-ready dataset. 
+
+
+
+\subsection{Anomaly handling}
+\label{sec:anomaly}
+The downstream models use the AGV's reported position $(x_m, y_m)$ to compute every AP-relative feature. When on-board localization struggles—typically during initialization, after a manual repositioning of the AGV, in feature-poor environments, or under sensor degradation—the reported position becomes unreliable, and so do the features derived from it. Such rows must be excluded so that the feature derivation remains physically meaningful.
+
+The NNS exposes a position-confidence score \texttt{nns\_position\_confidence} on a 0--100 scale, with a high value indicating that NNS estimates its own pose to be reliable. The distribution of this score across the entire dataset is provided in Fig.~\ref{fig:confidence-hist}. 
+
+\begin{figure}[!htbp]
+    \centering
+    \includegraphics[width=\columnwidth]{docs/paper/img/confidence_hist.png}
+    \caption{Distribution of \texttt{nns\_position\_confidence} and the exclusion threshold $T^{\star} = 35$.}
+    \label{fig:confidence-hist}
 \end{figure}
 
-%-------------------------------------------------------------------- 3.4
-\subsection{Dataset noise floor}\label{sec:noisefloor}
-Reported model accuracy values are interpretable only against a
-reference for the irreducible variability of the data. We therefore
-characterize the dataset noise floor at the spatial resolution at
-which features are realistically deployable, namely 0.5\,m position
-binning: if two visits to the same 0.5-m cell at different times
-yield substantially different \texttt{signal\_power} readings, no
-model that uses 0.5-m position binning alone can resolve below that
-variability.
-
-The noise-floor estimate uses the 85 cells of size 0.5\,m that contain
-at least 30 rows in both S1 and S2 (the only two sessions sharing a
-workspace, allowing same-cell repeat measurements). The mean per-cell
-standard deviation of \texttt{signal\_power} within a session is
-4.90\,dB on S1, 5.01\,dB on S2, and 4.95\,dB pooled. The median
-absolute difference between the two sessions' per-cell mean values is
-4.24\,dB. We therefore take 4.95\,dB as the noise floor at 0.5-m
-position binning. Any predictor that resolves below this floor must be
-exploiting information at finer spatial granularity than 0.5\,m ---
-for instance, position at sensor resolution, telemetry, or AP-relative
-geometry. We refer back to this number when interpreting model RMSE in
-Sections~\ref{sec:cross-session} and~\ref{sec:within-session}.
-
-%-------------------------------------------------------------------- 3.5
-\subsection{Feature stack}\label{sec:features}
-The training-ready dataset has 44 columns; 38 of them are numeric
-features supplied to the predictive models, organized into five
-feature groups summarized in Table~\ref{tab:features}.
+A 5-bin moving average of the histogram identifies a clear saddle between the two modes at $T^{\star} = 35$. Rows with confidence below this threshold are excluded from training and evaluation. The threshold removes 74{,}437 of the 681{,}593 matched samples (10.92\%) and leaves the remaining 89.08\% for downstream use.
 
 \begin{table*}[!t]
-\caption{Feature stack supplied to the predictive models, partitioned
-into five groups (38 features in total).}
-\label{tab:features}
-\centering
-\renewcommand{\arraystretch}{1.05}
-\setlength{\tabcolsep}{5pt}
-\footnotesize
-\begin{tabular}{l c p{0.30\textwidth} l p{0.40\textwidth}}
-\toprule
-Group & \# & Feature(s) & Type / units & Description \\
-\midrule
-Position             & 2  & $x_m,\ y_m$                              & float / m         & AGV centroid in the workspace reference frame \\[1pt]
-\midrule
-\multirow{6}{*}{Telemetry} & 1 & \texttt{speed\_mps}              & float / m\,s$^{-1}$  & AGV linear speed \\
-                     & 1  & \texttt{turn\_rate}                       & float / rad\,s$^{-1}$ & AGV angular velocity \\
-                     & 3  & \texttt{load\_long}, \texttt{load\_mid}, \texttt{load\_short} & float / a.u.\ & strain-gauge load components on three axes \\
-                     & 1  & \texttt{battery\_voltage}                 & float / V        & battery voltage \\
-                     & 1  & \texttt{momentary\_current}               & float / A        & instantaneous current consumption \\
-                     & 1  & \texttt{nns\_state}                       & integer code     & NNS internal state code \\[1pt]
-\midrule
-\multirow{4}{*}{AP-relative} & 1 & \texttt{dist\_to\_AP}            & float / m        & Euclidean distance from AGV to surveyed AP \\
-                     & 2  & \texttt{sin\_AP}, \texttt{cos\_AP}        & float            & sine and cosine of the AP bearing relative to the AGV heading \\
-                     & 1  & \texttt{clutter\_frac\_toward\_AP}        & float / [0,1]    & LiDAR clutter fraction in the 30$^{\circ}$ sector facing the AP (NaN if AP outside FOV) \\
-                     & 1  & \texttt{is\_AP\_in\_FOV}                  & binary           & whether the AP bearing falls inside the LiDAR's empirical valid FOV \\[1pt]
-\midrule
-\multirow{3}{*}{LiDAR scalar} & 2 & \texttt{mean\_dist\_mm}, \texttt{dist\_p90\_mm} & float / mm   & mean and 90th-percentile beam distance over the valid 222$^{\circ}$ sector \\
-                     & 2  & \texttt{clutter\_frac}, \texttt{openness\_frac} & float / [0,1] & clutter and openness ratios over the valid 222$^{\circ}$ sector \\
-                     & 1  & \texttt{mean\_front\_mm}                  & float / mm       & mean beam distance in the front cone \\[1pt]
-\midrule
-\multirow{2}{*}{LiDAR sectoral} & 7 & \texttt{mean\_dist\_sector\_\{1..7\}\_mm} & float / mm  & mean beam distance in each of seven contiguous 30$^{\circ}$ sectors \\
-                     & 7  & \texttt{clutter\_frac\_sector\_\{1..7\}}  & float / [0,1]    & clutter fraction in each of seven contiguous 30$^{\circ}$ sectors \\
-\bottomrule
-\end{tabular}
-\vspace{-0.6em}
+    \caption{Feature stack supplied to the predictive models, partitioned
+    into five groups}
+    \label{tab:features}
+    \centering
+    \setlength{\tabcolsep}{5pt}
+    \footnotesize
+    \begin{tabular}{l c p{0.24\textwidth} l p{0.44\textwidth}}
+        \toprule
+        Group & \# & Feature(s) & Type / units & Description \\
+        \midrule
+        Position             & 2  & $x_m,\ y_m$                              & float / m         & AGV centroid in the workspace reference frame \\
+        \midrule
+        \multirow{3}{*}{Telemetry} & 1 & \texttt{speed\_mps}              & float / m\,s$^{-1}$  & AGV linear speed \\
+                             & 1  & \texttt{turn\_rate}                       & float / rad\,s$^{-1}$ & AGV angular velocity \\
+                             & 1  & \texttt{momentary\_current}               & float / A        & instantaneous current consumption \\
+        \midrule
+        \multirow{5}{*}{AP-relative} & 1 & \texttt{dist\_to\_AP}            & float / m        & Euclidean distance from AGV to surveyed AP \\
+                             & 2  & \texttt{sin\_AP}, \texttt{cos\_AP}        & float            & sine and cosine of the AP bearing relative to the AGV heading \\
+                             & 1  & \texttt{clutter\_frac\_toward\_AP}        & float / [0,1]    & LiDAR clutter fraction in the 30$^{\circ}$ sector facing the AP (NaN if AP outside FOV) \\
+                             & 1  & \texttt{is\_AP\_in\_FOV}                  & binary           & whether the AP bearing falls inside the LiDAR's empirical valid FOV \\
+        \midrule
+        \multirow{3}{*}{LiDAR scalar} & 2 & \texttt{mean\_dist\_mm}, \texttt{dist\_p90\_mm} & float / mm   & mean and 90th-percentile beam distance over the valid 222$^{\circ}$ sector \\
+                             & 2  & \texttt{clutter\_frac}, \texttt{openness\_frac} & float / [0,1] & clutter and openness ratios over the valid 222$^{\circ}$ sector \\
+                             & 1  & \texttt{mean\_front\_mm}                  & float / mm       & mean beam distance in the front cone \\[1pt]
+        \midrule
+        \multirow{2}{*}{LiDAR sectoral} & 7 & \texttt{mean\_dist\_sector\_\{1..7\}\_mm} & float / mm  & mean beam distance in each of seven contiguous 30$^{\circ}$ sectors \\
+                             & 7  & \texttt{clutter\_frac\_sector\_\{1..7\}}  & float / [0,1]    & clutter fraction in each of seven contiguous 30$^{\circ}$ sectors \\
+        \bottomrule
+    \end{tabular}
 \end{table*}
 
-The empirical valid LiDAR field of view is narrower than the
-nameplate 270$^{\circ}$. Of the 1{,}350 active beams, 241 hit the AGV
-body itself at sub-200\,mm range and are permanently masked; the
-remaining 1{,}109 beams cover a contiguous 222$^{\circ}$ sector that
-hosts the seven 30$^{\circ}$ sectoral aggregates listed in
-Table~\ref{tab:features}. Reported metrics are stratified by
-\texttt{is\_AP\_in\_FOV}: the in-FOV stratum is the regime in which
-directional LiDAR features should be most useful, since the AP itself
-falls within the LiDAR's valid sector and clutter measurements toward
-the AP are well-defined.
 
-%==========================================================================
-\section{Methodology}\label{sec:method}
-%==========================================================================
+\subsection{Dataset noise floor}
+\label{sec:noisefloor}
+Reported model accuracy values are interpretable only against a reference for the irreducible variability of the data. We therefore characterize the dataset noise floor at the spatial resolution at which features are realistically deployable, namely 0.5\,m position binning: if two visits to the same 0.5-m cell at different times yield substantially different \texttt{signal\_power} readings, no model that uses 0.5-m position binning alone can resolve below that variability.
 
-Two evaluation protocols are executed to probe complementary aspects
-of generalization. The cross-session leave-one-route-out (LORO)
-protocol uses three folds, each holding out one session
-(Section~\ref{sec:cross-session}). The held-out session contains
-trajectory patterns the model has not been trained on, including
-(in fold F3) a route recorded in a workspace area that does not
-appear in the training set. Because the position reference frames
-do not align across the held-out route and the training routes,
-cross-session models do not use the raw position $(x_m, y_m)$;
-features are restricted to ego-frame LiDAR, telemetry, and
-per-session AP-relative geometry.
+The noise-floor estimate uses the 85 cells of size 0.5\,m that contain at least 30 rows in both S1 and S2 (the two sessions sharing the same coordinate reference frame, allowing same-cell repeat measurements). The mean per-cell standard deviation of \texttt{signal\_power} within a session is 4.90\,dB on S1, 5.01\,dB on S2, and 4.95\,dB pooled. The median absolute difference between the two sessions' per-cell mean values is 4.24\,dB. We therefore take 4.95\,dB as the noise floor at 0.5-m position binning. Any predictor that resolves below this floor must be exploiting information at finer spatial granularity than 0.5\,m --- for instance, position at sensor resolution, telemetry, or AP-relative geometry.
 
-The within-session leave-region-out (LRO) protocol uses five folds
-on session S1 only --- the largest session by both spatial coverage
-and sample count (Section~\ref{sec:within-session}). Regions are
-obtained by $K$-means clustering on $(x_m, y_m)$ with $k = 5$.
-Within-session models do use the raw position. The two protocols
-together test the model's ability to transfer learned propagation
-structure across operating conditions (LORO) and to extrapolate to
-unseen physical regions of the same workspace (LRO).
+\subsection{Feature stack}
+\label{sec:features}
+The training-ready dataset comprises 29 numeric features, organized into five feature groups, as summarized in Table~\ref{tab:features}.
+The empirical valid LiDAR field of view (FOV) is narrower than the nominal 270$^{\circ}$. Of the 1{,}350 active beams, 241 hit the AGV body itself at sub-200\,mm range and are permanently masked. The remaining 1{,}109 beams cover a contiguous 222$^{\circ}$ sector that hosts the seven 30$^{\circ}$ sectoral aggregates. 
 
-The predictive model on both protocols is gradient-boosted regression
-trees, trained with XGBoost (six hyperparameter configurations in
-total, defined below) and cross-checked with LightGBM. The target
-variable is the WiFi received signal power, in dBm, reported for the
-matched LiDAR--telemetry sample.
+The experimental AGV is equipped with a single front-facing LiDAR, whereas production industrial AGVs typically use two for full 360° coverage. To account for this reduced angular coverage, evaluation metrics are stratified by \texttt{is\_AP\_in\_FOV}. The in-FOV stratum is where directional LiDAR features are most informative: the AP falls within the sensor's valid sector, and obstruction measurements toward the AP are geometrically well-defined. This stratum also serves as the dual-LiDAR-equivalent lower bound — if LiDAR-derived features contribute predictive value, it should be observable here.
 
-%-------------------------------------------------------------------- 4.2
-\subsection{Feature-group ablation}\label{sec:method-disamb}
-A single ablation between a full and an ablated model is ambiguous:
-no degradation can mean either (i) the removed feature group did not
-help, or (ii) the group is substitutable for another retained group.
-We therefore run two complementary ablations against the full model:
-$M^\prime$ removes feature group $A$ (here, the LiDAR features) and
-$M^{\prime\prime}$ removes feature group $B$ (here, the AP-relative
-features). The pair of resulting RMSE differences is then classified,
-with an absolute threshold of 0.5\,dB, into one of four verdicts:
-\textit{$A$ removable}, \textit{$B$ removable}, \textit{both
-removable}, or \textit{mixed/unclear}. The procedure is
-feature-group-agnostic: it reports which group can be removed
-without loss, independently of which group the analyst expected to
-matter. Cross-session variants are denoted B5, B5$^\prime$, and
-B5$^{\prime\prime}$; within-session variants are denoted W4,
-W4$^\prime$, and W4$^{\prime\prime}$.
 
-%-------------------------------------------------------------------- 4.3
-\subsection{Robustness controls}\label{sec:method-controls}
-The validity of the ablation-based comparison depends on several
-conditions that are tested explicitly. In what follows, the primary
-configuration of the XGBoost model is denoted H0 and is defined by
-tree depth $6$, learning rate $\eta = 0.05$, $L_2$ regularization
-$\lambda = 1.0$, $n_\text{est} = 2000$ boosting rounds with
-early-stopping after $100$ non-improving rounds, and random seed
-$20260427$. Validation is performed chronologically per session
-(last $10\,\%$ of each training session). The robustness controls,
-all evaluated on the cross-session F1 fold unless stated otherwise,
-are:
+\section{Methodology}
+\label{sec:method}
+
+Two evaluation protocols are executed. The cross-session leave-one-route-out (LORO) protocol uses three folds, each holding out one session. The held-out session contains trajectory patterns the model has not been trained on. Because the coordinate reference frames do not align across all routes, cross-session models do not use the raw position $(x_m, y_m)$; features are restricted to ego-frame LiDAR, telemetry, and AP-relative geometry.
+
+The within-session LRO protocol uses five folds on session S1 only --- the largest session by both spatial coverage and sample count. Regions are obtained by $K$-means clustering on $(x_m, y_m)$ with $k = 5$. Within-session models do use the raw position. The two protocols together test the model's ability to transfer learned propagation structure across operating conditions (LORO) and to extrapolate to unseen physical regions of the same workspace (LRO).
+
+The predictive model on both protocols is a gradient-boosted regression tree, trained with XGBoost (six hyperparameter configurations in total, defined below) and cross-checked with LightGBM. The target variable is the Wi\nobreakdash-Fi received signal strength, in dBm, reported for the matched LiDAR--telemetry sample.
+
+\subsection{Feature group ablation}
+\label{sec:method-disamb}
+A single ablation between a full and an ablated model is ambiguous: no degradation can mean either (i) the removed feature group did not help, or (ii) the group is substitutable for another retained group. We therefore run two complementary ablations against the full model: $M^\prime$ removes feature group $A$ (here, the LiDAR features) and $M^{\prime\prime}$ removes feature group $B$ (here, the AP-relative features). The pair of resulting RMSE differences is then classified, with an absolute threshold of 0.5\,dB, into one of four verdicts: \textit{$A$ removable}, \textit{$B$ removable}, \textit{both removable}, or \textit{mixed/unclear}. The procedure is feature group-agnostic: it reports which group can be removed without loss, independently of which group the analyst expected to matter. Cross-session variants are denoted B5, B5$^\prime$, and B5$^{\prime\prime}$; within-session variants are denoted W4, W4$^\prime$, and W4$^{\prime\prime}$.
+
+\subsection{Robustness controls}
+\label{sec:method-controls}
+The validity of the ablation-based comparison depends on several conditions that are tested explicitly. In what follows, the primary configuration of the XGBoost model is denoted H0 and is defined by tree depth $6$, learning rate $\eta = 0.05$, $L_2$ regularization $\lambda = 1.0$, $n_\text{est} = 2000$ boosting rounds with early-stopping after $100$ non-improving rounds, and random seed $20260427$. Validation is performed chronologically per session (last $10\,\%$ of each training session). The robustness controls, applied to the relevant fold for each diagnostic, are:
 
 \begin{enumerate}
-\setlength\itemsep{1pt}
-\item \textit{Hyperparameter sensitivity.} A six-configuration sweep
-  of the XGBoost model: H0 (the primary configuration above);
-  H1 (depth $4$, otherwise H0); H2 (slow learning rate $\eta = 0.02$,
-  higher regularization $\lambda = 5$); H3 (depth $8$, otherwise H0);
-  plus H1\textsubscript{rv} and H2\textsubscript{rv} with random rather
-  than chronological validation splits.
-\item \textit{Framework sensitivity.} A LightGBM cross-check with
-  default and depth-equivalent hyperparameters, addressing whether the
-  comparison is specific to XGBoost.
-\item \textit{Feature-informativeness check.} A LiDAR-feature
-  permutation control: a per-session block-shuffle of the 19
-  ego-frame LiDAR columns that preserves their marginal and joint
-  distributions but destroys row-level alignment with the target,
-  evaluated both cross-session and within-session. If the
-  shuffled-LiDAR model achieves the same ablation effect as the
-  real-LiDAR model, the model was not extracting row-aligned
-  information from the LiDAR features.
-\item \textit{Single-fold robustness.} For any within-session fold
-  that nominally clears the threshold: a 1-m spatial buffer-zone
-  exclusion (training rows within 1\,m of any test row are dropped)
-  controlling spatial autocorrelation, and a depth-4 hyperparameter
-  swap controlling tree-depth over-fitting; plus their joint
-  application.
-\item \textit{Noise-floor reference.} The noise-floor characterization
-  of Section~\ref{sec:noisefloor} is used to contextualize the
-  absolute RMSE values reported in
-  Sections~\ref{sec:cross-session} and~\ref{sec:within-session}.
+    \item \textit{Hyperparameter sensitivity.} A six-configuration sweep of the XGBoost model: H0 (the primary configuration above); H1 (depth $4$, otherwise H0); H2 (slow learning rate $\eta = 0.02$, higher regularization $\lambda = 5$); H3 (depth $8$, otherwise H0); plus H1\textsubscript{rv} and H2\textsubscript{rv} with random rather than chronological validation splits.
+    \item \textit{Framework sensitivity.} A LightGBM cross-check with default and depth-equivalent hyperparameters, addressing whether the comparison is specific to XGBoost.
+    \item \textit{Feature informativeness check.} A LiDAR-feature permutation control: a per-session block-shuffle of the 19   ego-frame LiDAR columns that preserves their marginal and joint distributions but destroys row-level alignment with the target, evaluated both cross-session and within-session. If the shuffled-LiDAR model achieves the same ablation effect as the real-LiDAR model, the model was not extracting row-aligned information from the LiDAR features.
+    \item \textit{Single-fold robustness.} For any within-session fold that nominally clears the threshold: a 1-m spatial buffer-zone exclusion (training rows within 1\,m of any test row are dropped) controlling spatial autocorrelation, and a depth-4 hyperparameter swap controlling tree-depth overfitting; plus their joint application.
+    \item \textit{Noise-floor reference.} The noise-floor characterization of Section~\ref{sec:noisefloor} is used to contextualize the absolute RMSE values reported in   Sections~\ref{sec:cross-session} and~\ref{sec:within-session}.
 \end{enumerate}
 
-All training-set sizes after anomaly filtering are reported in
-Sections~\ref{sec:cross-session} and~\ref{sec:within-session}.
-Bootstrap 95\,\% confidence intervals (CIs) on RMSE are computed
-with $B = 1000$ resamples.
+All training-set sizes after anomaly filtering are reported in Sections~\ref{sec:cross-session} and~\ref{sec:within-session}. Bootstrap 95\,\% CIs on RMSE are computed with $B = 1000$ resamples.
 
-%==========================================================================
-\section{Cross-Session Experiment}\label{sec:cross-session}
-%==========================================================================
 
-The cross-session experiment uses three folds: F1 (S1 held out, train
-on S2+S3), F2 (S2 held out, train on S1+S3), and F3 (S3 held out,
-train on S1+S2; the 31\,Hz training sessions are decimated by $k = 7$
-to match S3's 4.4\,Hz cadence). Per-fold post-anomaly training-set
-sizes are 337{,}390 rows for F1, 403{,}876 for F2, and 50{,}232 for
-F3 (the cadence match shrinks F3 to keep dynamics balanced). Six
-ablation variants B0--B5 escalate from a distance-only baseline up
-to the full ego-frame LiDAR + AP-relative model (Table~\ref{tab:b-variants}).
-Two complementary variants implement the feature-group ablation
-procedure of Section~\ref{sec:method-disamb}: B5$^\prime$ removes the
-LiDAR features while keeping AP-relative geometry, and
-B5$^{\prime\prime}$ removes the AP-relative features while keeping
-LiDAR. F1 is treated as the primary fold throughout, because it
-holds out the session with the largest spatial coverage and the
-highest \texttt{signal\_power} variability
-($\sigma_P = 10.52$\,dB), which together provide the most stringent
-test of cross-session generalization.
+\section{Cross-Session Experiment}
+\label{sec:cross-session}
 
-\begin{table}[!t]
-\caption{Cross-session ablation variants.}
-\label{tab:b-variants}
-\centering
-\renewcommand{\arraystretch}{1.05}
-\setlength{\tabcolsep}{4pt}
-\footnotesize
-\begin{tabular}{l c l}
-\toprule
-Variant & \# feat. & Feature groups \\
-\midrule
-B0                            & 1  & \texttt{dist\_to\_AP} only \\
-B1                            & 3  & AP-relative geometry (no clutter) \\
-B2                            & 8  & B1 + telemetry \\
-B3                            & 22 & B2 + LiDAR scalar + \texttt{clutter\_frac\_toward\_AP} \\
-B4                            & 30 & B3 + 7 sectoral mean-distance \\
-B5                            & 32 & full ego-frame LiDAR + AP-relative \\
-B5$^\prime$                   & 13 & B5 minus LiDAR features \\
-B5$^{\prime\prime}$           & 27 & B5 minus AP-relative features \\
-\bottomrule
-\end{tabular}
-\vspace{-0.6em}
+The cross-session experiment uses three folds: F1 (S1 held out, train on S2+S3), F2 (S2 held out, train on S1+S3), and F3 (S3 held out, train on S1+S2; the 31\,Hz training sessions are decimated by $k = 7$ to match S3's 4.4\,Hz cadence). Per-fold post-anomaly training set sizes are 337{,}390 rows for F1, 403{,}876 for F2, and 50{,}232 for F3. Six ablation variants B0--B5 progress from a distance-only baseline up to the full ego-frame LiDAR + AP-relative model (Table~\ref{tab:b-variants}). 
+Two complementary variants implement the feature group ablation procedure: B5$^\prime$ removes the LiDAR features while keeping AP-relative geometry, and B5$^{\prime\prime}$ removes the AP-relative features while keeping LiDAR.
+
+\begin{table}[!htbp]
+    \caption{Cross-session ablation variants}
+    \label{tab:b-variants}
+    \centering
+    \setlength{\tabcolsep}{4pt}
+    \footnotesize
+    \begin{tabular}{l c l}
+        \toprule
+        Variant & \# feat. & Feature groups \\
+        \midrule
+        B0 & 1  & \texttt{dist\_to\_AP} only \\
+        B1 & 3  & AP-relative geometry (no clutter) \\
+        B2 & 8  & B1 + LiDAR scalar \\
+        B3 & 22 & B2 + LiDAR sectoral \\
+        B4 & 25 & B3 + telemetry \\
+        B5 & 27 & full ego-frame LiDAR + AP-relative \\
+        B5$^\prime$ & 8 & B5 minus LiDAR features \\
+        B5$^{\prime\prime}$ & 22 & B5 minus AP-relative features \\
+        \bottomrule
+    \end{tabular}
 \end{table}
 
-%-------------------------------------------------------------------- 5.2
-\subsection{Headline results}
-Table~\ref{tab:cs-headline} reports the in-FOV
-$\dlidar = \mathrm{RMSE}(B1) - \mathrm{RMSE}(B5)$ per fold under
-the H0 configuration. The pre-registered practical-relevance
-threshold of $+1\dB$ is not approached on any fold; F1 in-FOV is
-decisively negative ($-0.52\dB$). The feature-group ablation
-verdict (Table~\ref{tab:cs-disambig}) is LiDAR removable on every
-fold: removing the 19 LiDAR features either improves the model or
-hurts it by less than 0.5\,dB. AP-relative features are never
-removable: B5$^{\prime\prime}$ is decisively worse than B5 on every
-fold (by 0.33--2.14\,dB).
+Per-variant in-FOV RMSE on the cross-session folds under the H0 configuration is illustrated in Fig.~\ref{fig:per-variant-ablation}. The highlighted headline variants B1 and B5 are considered representative of the full variant ladder. The intermediate variants B0/B2/B3/B4 represent graded enrichments, with per-fold per-variant values provided in the project repository (footnote~1) due to conference page constraints.
 
-\begin{table}[!t]
-\caption{Cross-session in-FOV $\dlidar$ per fold under H0.}
-\label{tab:cs-headline}
-\centering
-\renewcommand{\arraystretch}{1.05}
-\footnotesize
-\begin{tabular}{l c c c c}
-\toprule
-Fold & $n_{\text{test}}$ & RMSE(B1) & RMSE(B5) & $\dlidar$ (95\,\% CI) \\
-\midrule
-F1 & 134{,}692 & 8.01 & 8.53 & $\mathbf{-0.52}$ ($[-0.53, -0.50]$) \\
-F2 & 102{,}354 & 6.71 & 6.41 & $+0.30$ ($[+0.29, +0.32]$) \\
-F3 & 121{,}831 & 8.87 & 7.73 & $+1.14$ ($[+1.12, +1.17]$) \\
-\bottomrule
-\end{tabular}
-\\[3pt]
-\raggedright
-\footnotesize
-$\dlidar > 0$ means LiDAR features improve over the AP-relative-only
-B1 baseline; bootstrap 95\,\% CIs in brackets ($B = 1000$).
-\vspace{-0.6em}
-\end{table}
-
-\begin{table}[!t]
-\caption{Cross-session feature-group ablation verdict per fold (H0).}
-\label{tab:cs-disambig}
-\centering
-\renewcommand{\arraystretch}{1.05}
-\footnotesize
-\begin{tabular}{l c c c c}
-\toprule
-Fold & B5 & B5$^\prime$ & B5$^{\prime\prime}$ & verdict \\
-\midrule
-F1 & 9.30 & 8.91 & 11.44 & LiDAR removable \\
-F2 & 8.80 & 8.47 & 9.13 & LiDAR removable \\
-F3 & 9.28 & 9.37 & 10.69 & LiDAR removable \\
-\bottomrule
-\end{tabular}
-\\[3pt]
-\raggedright
-\footnotesize
-Overall RMSE in dB; tolerance 0.5\,dB.
-\vspace{-0.6em}
-\end{table}
-
-F3 nominally clears the $+1\,$dB threshold on the in-FOV stratum
-($+1.14\dB$), but the feature-group ablation verdict is still
-``LiDAR removable'' because B5$^\prime$ ties B5 within tolerance.
-F3's apparent LiDAR boost is a substitution effect for AP-relative
-features rather than a unique contribution: the LiDAR features are
-encoding the same AP-direction information that B5$^\prime$ encodes
-more compactly. This is exactly the distinction the feature-group
-ablation procedure is designed to surface.
-
-%-------------------------------------------------------------------- 5.3
-\subsection{Hyperparameter robustness}
-Table~\ref{tab:hyperparam} reports F1 in-FOV $\dlidar$ across six
-configurations. Every configuration is negative; the range is
-$[-1.90, -0.29]\dB$. The two random-validation variants run to their
-early-stop limits (1{,}999 and 4{,}999 boosting rounds vs.\ 49 and 205
-for their chronological-validation counterparts), which is a clear
-over-fitting signature: random validation lets the model memorize
-trajectory-correlated patterns that chronological validation correctly
-excludes. The chronological protocol is therefore the more
-conservative one, and the negative result is not an artifact of early
-stopping.
-
-\begin{table}[!t]
-\caption{Hyperparameter robustness on F1 in-FOV.}
-\label{tab:hyperparam}
-\centering
-\renewcommand{\arraystretch}{1.05}
-\footnotesize
-\begin{tabular}{l c c c c}
-\toprule
-Config & RMSE(B1) & RMSE(B5) & $\dlidar$ & clears +1\,dB? \\
-\midrule
-H0      & 8.01 & 8.53  & $-0.52$ & no \\
-H1      & 7.86 & 8.15  & $-0.29$ & no \\
-H2      & 8.15 & 8.59  & $-0.45$ & no \\
-H3      & 8.58 & 9.19  & $-0.61$ & no \\
-H1\_rv  & 7.86 & 9.76  & $-1.90$ & no \\
-H2\_rv  & 8.15 & 9.38  & $-1.23$ & no \\
-\bottomrule
-\end{tabular}
-\\[3pt]
-\raggedright
-\footnotesize
-H0--H3 and the random-validation variants H1\_rv, H2\_rv are
-defined in Section~\ref{sec:method-controls}. None clear the
-$+1\,$dB threshold.
-\vspace{-0.6em}
-\end{table}
-
-%-------------------------------------------------------------------- 5.4
-\subsection{Framework cross-check (LightGBM)}
-On F1 in-FOV, LightGBM with default hyperparameters (\texttt{num\_leaves}=31)
-gives $\dlidar = -0.58\dB$; with depth-equivalent (\texttt{num\_leaves}=15)
-$\dlidar = -0.93\dB$. Both are strictly more negative than any XGBoost
-configuration. Across eight cells (six XGBoost configs $\cup$ two LightGBM
-configs), $\dlidar$ is negative on every cell. The negative result is not
-framework-specific.
-
-%-------------------------------------------------------------------- 5.5
-\subsection{Cross-session LiDAR-feature permutation control}\label{sec:cs-perm}
-We retrain the full B5 model on F1 with the 19 ego-frame LiDAR
-columns block-shuffled within each training session: each LiDAR
-feature's marginal distribution and the joint distribution among LiDAR
-features are preserved, but row-level alignment with telemetry,
-position, AP-relative geometry, and the target is destroyed. If the
-shuffled model achieves a $\dlidar$ comparable to the real-LiDAR fit,
-the real-LiDAR $\dlidar$ was not driven by row-aligned LiDAR
-information. Under both H0 and H1 hyperparameters,
-$|\dlidar^{\text{real}} - \dlidar^{\text{shuffled}}| \le 0.30\dB$
-(H0: $-0.52$ vs.\ $-0.37$; H1: $-0.29$ vs.\ $+0.01$), well within
-the 0.5\,dB tolerance. The cross-session B5 model is not extracting
-row-aligned LiDAR information beyond the marginal distributions of the
-LiDAR features.
-
-%==========================================================================
-\section{Within-Session Experiment}\label{sec:within-session}
-%==========================================================================
-
-The within-session experiment evaluates whether LiDAR features add
-value when raw position is available --- the regime in which a
-deployed model would normally operate inside a fixed workspace.
-Five-fold leave-region-out evaluation is performed on session S1
-only, since S1 has by far the largest spatial coverage and sample
-count of the three sessions. Regions are obtained by $K$-means
-clustering on $(x_m, y_m)$ with $k = 5$ (Fig.~\ref{fig:regions});
-the five resulting region splits give per-region row counts ranging
-from 24{,}593 (R-4) to 80{,}365 (R-1). Each fold trains the
-predictive models on four regions and evaluates on the held-out
-region. Six ablation variants are evaluated, summarized in
-Table~\ref{tab:wlro-variants}. The model's reliance on LiDAR is
-quantified by the within-session ablation effect
-$\dlidarw = \mathrm{RMSE}(\mathrm{W2}) - \mathrm{RMSE}(\mathrm{W4})$:
-positive values indicate that LiDAR features improve over the
-LiDAR-free W2 baseline.
-
-\begin{table}[!t]
-\caption{Within-session ablation variants.}
-\label{tab:wlro-variants}
-\centering
-\renewcommand{\arraystretch}{1.05}
-\setlength{\tabcolsep}{4pt}
-\footnotesize
-\begin{tabular}{l c l}
-\toprule
-Variant & \# feat. & Feature groups \\
-\midrule
-W0                  & 2  & position only \\
-W1                  & 10 & W0 + telemetry \\
-W2 ($\equiv$ W4$^\prime$) & 15 & W1 + AP-relative (no LiDAR) \\
-W3                  & 20 & W2 + LiDAR scalar \\
-W4                  & 34 & W3 + LiDAR sectoral (full model) \\
-W4$^{\prime\prime}$ & 29 & W4 minus AP-relative \\
-\bottomrule
-\end{tabular}
-\\[3pt]
-\raggedright
-\footnotesize
-W2 is the LiDAR-free baseline; W4 is the full model.
-W4$^{\prime\prime}$ removes AP-relative features and is the
-counterpart of W2 in the feature-group ablation procedure of
-Section~\ref{sec:method-disamb}.
-\vspace{-0.6em}
-\end{table}
-
-% TODO: figure showing K-means regions on S1
-\begin{figure}[!t]
-\centering
-% \includegraphics[width=\columnwidth]{figs/regions_15_03.pdf}
-\fbox{\parbox[c][2.4cm][c]{0.92\columnwidth}{\centering\itshape
-[Placeholder Fig.~\ref{fig:regions}: $K$-means $k{=}5$ partition of
-the S1 trajectory in $(x_m, y_m)$. R-1 is closest to the AP; R-5 is
-farthest.]}}
-\caption{Within-session spatial regions on S1.}
-\label{fig:regions}
-\vspace{-1.0em}
+\begin{figure}[!htbp]
+    \centering
+    \includegraphics[width=\columnwidth]{docs/paper/img/per_variant_ablation.png}
+    \caption{Per-variant in-FOV RMSE on the cross-session folds. The dashed line marks RMSE(B1) per panel. Error bars are bootstrap 95\,\% CIs ($B = 1000$).}
+    \label{fig:per-variant-ablation}
 \end{figure}
 
-%-------------------------------------------------------------------- 6.2
-\subsection{Headline results}
-Table~\ref{tab:wlro-headline} reports per-fold in-FOV $\dlidarw$.
-One of the five folds, R-4, nominally clears the $+1\,$dB
-threshold ($+1.085\dB$); the other four are zero or negative. R-1
-is severely negative ($-9.06\dB$ in-FOV): when the closest-to-AP
-region is held out, the H0 (depth-6) model with LiDAR over-fits
-sharply on the remaining regions and degrades on R-1. The
-feature-group ablation verdict at the H0 configuration
-(Table~\ref{tab:wlro-disambig}) is heterogeneous: R-3 and R-5 say
-LiDAR removable; R-4 says AP-relative removable; R-1 and R-2 are
-mixed. Without the robustness controls described below, the
-within-session story would read as ``LiDAR helps in one of five
-regions''; the controls invalidate that reading.
+Table~\ref{tab:cs-headline} reports the in-FOV $\dlidar = \mathrm{RMSE}(B1) - \mathrm{RMSE}(B5)$. We adopt $+1\dB$ as a practical-relevance threshold (large enough to be measurable above bootstrap CIs, and roughly the magnitude at which an additional sensor stream could justify its integration cost in a deployment). The threshold is approached on only one of the three folds (F3, $+1.20\dB$); F1 and F2 are below it ($-0.19\dB$ and $+0.55\dB$). 
 
-\begin{table}[!t]
-\caption{Within-session in-FOV $\dlidarw$ per fold under H0.}
-\label{tab:wlro-headline}
-\centering
-\renewcommand{\arraystretch}{1.05}
-\footnotesize
-\begin{tabular}{l c c c c}
-\toprule
-Fold & $n_{\text{test}}$ & RMSE(W2) & RMSE(W4) & $\dlidarw$ (95\,\% CI) \\
-\midrule
-R-1 & 57{,}270 & 9.51 & 18.57 & $-9.06$ ($[-9.10, -9.01]$) \\
-R-2 & 15{,}516 & 5.19 & 6.08  & $-0.89$ ($[-0.92, -0.85]$) \\
-R-3 & 30{,}974 & 4.39 & 4.52  & $-0.14$ ($[-0.16, -0.12]$) \\
-R-4 & 10{,}687 & 3.11 & 2.02  & $\mathbf{+1.09}$ ($[+1.07, +1.10]$) \\
-R-5 & 20{,}245 & 4.74 & 4.79  & $-0.04$ ($[-0.06, -0.03]$) \\
-\bottomrule
-\end{tabular}
-\vspace{-0.6em}
+\begin{table}[!htbp]
+    \caption{Cross-session in-FOV $\dlidar$ per fold under H0}
+    \label{tab:cs-headline}
+    \centering
+    \footnotesize
+    \begin{tabular}{l c c c c}
+        \toprule
+        Fold & $n_{\text{test}}$ & RMSE(B1) & RMSE(B5) & $\dlidar$ (95\,\% CI) \\
+        \midrule
+        F1 & 134{,}692 & 8.01 & 8.20 & $-0.19$ ($[-0.21, -0.16]$) \\
+        F2 & 102{,}354 & 6.71 & 6.16 & $+0.55$ ($[+0.54, +0.56]$) \\
+        F3 & 121{,}831 & 8.87 & 7.67 & $\mathbf{+1.20}$ ($[+1.18, +1.23]$) \\
+        \bottomrule
+    \end{tabular}
+    \\[3pt]
+    \raggedright
+    \footnotesize
+    $\dlidar > 0$ means LiDAR features improve over the baseline. RMSE values in dB.
 \end{table}
 
-\begin{table}[!t]
-\caption{Within-session feature-group ablation verdict per fold (H0).}
-\label{tab:wlro-disambig}
-\centering
-\renewcommand{\arraystretch}{1.05}
-\footnotesize
-\begin{tabular}{l c c c l}
-\toprule
-Fold & W4 & W4$^\prime$ & W4$^{\prime\prime}$ & verdict \\
-\midrule
-R-1 & 17.53 & 8.92 & 16.31 & mixed/unclear \\
-R-2 & 6.06  & 5.49 & 6.67  & mixed/unclear \\
-R-3 & 4.57  & 4.18 & 6.61  & LiDAR removable \\
-R-4 & 4.69  & 5.76 & 5.00  & AP-rel.\ removable \\
-R-5 & 10.68 & 10.60 & 11.40 & LiDAR removable \\
-\bottomrule
-\end{tabular}
-\vspace{-0.6em}
+The verdict of the feature group ablation procedure is summarized per fold in Table~\ref{tab:cs-disambig}. AP-relative features are not removable on any fold --- B5$^{\prime\prime}$ is constantly worse than B5 throughout. LiDAR is removable on F1 and F2 (B5$^\prime$ is within 0.5\,dB of B5 in-FOV); on F3, B5 is below B5$^\prime$ by $\sim 0.5\dB$ on the in-FOV stratum, so the F3 verdict is ``LiDAR complementary'' rather than removable, motivating the F3-focused robustness diagnostic in the next subsection. 
+Since F3 holds out S3, whose coordinate reference frame is  aligned differently from the training sessions', the LiDAR feature distributions differ between training and test by construction.
+
+\begin{table}[!htbp]
+    \caption{Cross-session feature group ablation verdict per fold (H0). In-FOV RMSE in dB}
+    \label{tab:cs-disambig}
+    \centering
+    \footnotesize
+    \begin{tabular}{l c c c l}
+        \toprule
+        Fold & B5 & B5$^\prime$ & B5$^{\prime\prime}$ & verdict \\
+        \midrule
+        F1 & 8.20 & 7.93 & 12.14 & LiDAR removable \\
+        F2 & 6.16 & 5.85 & 7.51 & LiDAR removable \\
+        F3 & 7.67 & 8.15 & 8.82 & \textbf{LiDAR complementary} \\
+        \bottomrule
+    \end{tabular}
+    \vspace{-10pt}
 \end{table}
 
-%-------------------------------------------------------------------- 6.3
+
+\subsection{F3 robustness diagnostic}
+\label{sec:f3-diag}
+We apply three robustness controls of Section~\ref{sec:method-controls} to F3 to test whether the performance improvement reflects a deployment-relevant LiDAR signal (Table~\ref{tab:f3-diag}).
+The hyperparameter and LightGBM cross-check results indicate that the headline is hyperparameter-stable and not framework-specific.
+
+\vspace{-8pt}
+\begin{table}[!htbp]
+    \caption{F3 robustness diagnostic (in-FOV)}
+    \label{tab:f3-diag}
+    \centering
+    \setlength{\tabcolsep}{4pt}
+    \footnotesize
+    \begin{tabular}{l l r}
+        \toprule
+        Diagnostic & Configuration & in-FOV $\dlidar$ (dB) \\
+        \midrule
+        Hyperparameter & H0 (depth-6, locked)        & $+1.20$ \\
+        Hyperparameter & H1 (depth-4)                & $+1.11$ \\
+        Hyperparameter & H2 (slow-$\eta$, high $\lambda$) & $+1.51$ \\
+        Hyperparameter & H3 (depth-8)                & $+2.29$ \\
+        Framework      & LightGBM, default           & $+1.13$ \\
+        Framework      & LightGBM, $n_{\text{leaves}}{=}15$ & $+1.26$ \\
+        Permutation    & block-shuffle, H0           & $+0.74$ \\
+        Permutation    & block-shuffle, H1           & $+0.43$ \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+The permutation control, however, gives $\dlidar^{\text{shuffled}} = +0.74\dB$ (H0) and $+0.43\dB$ (H1) --- both strictly positive. This indicates that the $+1.20\dB$ on F3 is largely driven by the marginal-distribution difference between the independently-aligned held-out coordinate reference frame and the training sessions' frame, rather than by row-aligned LiDAR information about the local environment. The F3 contribution therefore cannot be claimed as a deployment-relevant positive on the basis of this evidence alone, and is flagged in the limitations.
+
+
+\section{Within-Session Experiment}
+\label{sec:within-session}
+
+The within-session experiment evaluates whether LiDAR features add value when raw position is available --- the regime in which a deployed model would normally operate inside a fixed workspace. LRO evaluation is performed on session S1 only, since S1 has by far the largest spatial coverage and sample count of the three sessions.
+The resulting partition is shown in Fig.~\ref{fig:regions}.
+
+\vspace{-6pt}
+\begin{figure}[!htbp]
+    \centering
+    \includegraphics[width=0.69\columnwidth]{docs/paper/img/regions_s1.png}
+    \vspace{-7pt}
+    \caption{Within-session spatial regions on S1.}
+    \label{fig:regions}
+\end{figure}
+
+The Regions are obtained by $K$-means clustering on $(x_m, y_m)$ with $k = 5$, and ordered by mean distance to the AP (R-1 closest, R-5 farthest). Each fold trains the predictive models on four regions and evaluates on the held-out region. 
+Six ablation variants are evaluated as summarized in Table~\ref{tab:wlro-variants}. 
+W2 is the LiDAR-free baseline and W4 is the full model; W4$^{\prime\prime}$ removes AP-relative features and is the counterpart of W2 in the feature group ablation procedure. 
+
+\vspace{-6pt}
+\begin{table}[!htbp]
+    \caption{Within-session ablation variants}
+    \label{tab:wlro-variants}
+    \centering
+    \setlength{\tabcolsep}{4pt}
+    \footnotesize
+    \begin{tabular}{l c l}
+        \toprule
+        Variant & \# feat. & Feature groups \\
+        \midrule
+        W0 & 2  & position only \\
+        W1 & 5  & W0 + telemetry \\
+        W2 ($\equiv$ W4$^\prime$) & 10 & W1 + AP-relative (no LiDAR) \\
+        W3 & 15 & W2 + LiDAR scalar \\
+        W4 & 29 & W3 + LiDAR sectoral (full model) \\
+        W4$^{\prime\prime}$ & 24 & W4 minus AP-relative \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+Per-variant in-FOV RMSE on the within-session folds under the H0 configuration is illustrated in Fig.~\ref{fig:per-variant-wlro-ablation}. The highlighted headline variants W2 and W4 are considered representative of the variant ladder. The intermediate variants W0/W1/W3 are considered graded enrichments. Per-fold per-variant values are provided in the project repository (footnote~1) due to conference page constraints.
+
+\vspace{-6pt}
+\begin{figure}[!htbp]
+    \centering
+    \includegraphics[width=\columnwidth]{docs/paper/img/per_variant_wlro_ablation.png}
+    \caption{Per-variant in-FOV RMSE on the within-session folds. The dashed line marks RMSE(W2) per panel. Error bars are bootstrap 95\,\% CIs ($B = 1000$).}
+    \label{fig:per-variant-wlro-ablation}
+\end{figure}
+
+The per-fold in-FOV $\dlidarw = \mathrm{RMSE}(\mathrm{W2}) - \mathrm{RMSE}(\mathrm{W4})$ values are reported in Table~\ref{tab:wlro-headline}. Every per-fold demonstrates $\dlidarw \le 0$, ranging from $-2.99\dB$ (R-1) to $-0.09\dB$ (R-3). The two largest negative values fall on the geometrically extremal folds R-1 and R-5 (closest and farthest from the AP), while the interior fold R-3 is closest to zero. This pattern suggests overfitting at the held-out extremes, though not conclusively established from the present data.
+
+\vspace{-6pt}
+\begin{table}[!htbp]
+    \caption{Within-session in-FOV $\dlidarw$ per fold under H0}
+    \label{tab:wlro-headline}
+    \centering
+    \footnotesize
+    \begin{tabular}{l c c c c}
+        \toprule
+        Fold & $n_{\text{test}}$ & RMSE(W2) & RMSE(W4) & $\dlidarw$ \\
+        \midrule
+        R-1 & 57{,}270 & 10.80 & 13.79 & $-2.99$ \\
+        R-2 & 15{,}516 & 7.19  & 9.40  & $-2.20$ \\
+        R-3 & 30{,}974 & 7.22  & 7.31  & $-0.09$ \\
+        R-4 & 10{,}687 & 4.16  & 5.79  & $-1.63$ \\
+        R-5 & 20{,}245 & 9.37  & 11.58 & $-2.22$ \\
+        \bottomrule
+    \end{tabular}
+    \\[3pt]
+    \raggedright
+    \footnotesize
+    $\dlidarw > 0$ means LiDAR features improve over the baseline. RMSE values in dB.
+\end{table}
+
+The feature group ablation verdict per fold (Table~\ref{tab:wlro-disambig}) is heterogeneous --- but no fold yields a verdict in which LiDAR uniquely contributes. On every fold, removing LiDAR either improves RMSE or leaves it unchanged within tolerance. The robustness controls in the next subsections investigate the alternative interpretation that the negative result reflects spatial-autocorrelation contamination rather than a genuine inability of LiDAR features to add information.
+
+\vspace{-6pt}
+\begin{table}[!htbp]
+    \caption{Within-session feature group ablation verdict per fold (H0). In-FOV RMSE in dB}
+    \label{tab:wlro-disambig}
+    \centering
+    \footnotesize
+    \begin{tabular}{l c c c l}
+        \toprule
+        Fold & W4 & W4$^\prime$ & W4$^{\prime\prime}$ & verdict \\
+        \midrule
+        R-1 & 13.79 & 10.80 & 17.14 & mixed/unclear \\
+        R-2 &  9.40 &  7.19 &  9.51 & AP-relative removable \\
+        R-3 &  7.31 &  7.22 &  9.52 & LiDAR removable \\
+        R-4 &  5.79 &  4.16 &  4.18 & mixed/unclear \\
+        R-5 & 11.58 &  9.37 & 12.86 & mixed/unclear \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
 \subsection{Spatial autocorrelation in absolute RMSE}
-Within-session RMSE values cannot be read as straightforward
-generalization estimates: signal\_power is spatially autocorrelated,
-and the held-out region rows are typically only a few metres away
-from the nearest training rows. The S1 semivariogram has empirical
-range $\approx 20$\,m, while the $K$-means regions span 5--13\,m on a
-side, so training rows up to $\sim$10\,m from any held-out region row
-are spatially correlated with the test set. To bound the magnitude of
-this contamination we apply a buffer-zone test on R-1: dropping all
-training rows within 1\,m of any held-out R-1 row inflates the W0 RMSE
-by $+12\dB$, the W1/W2 RMSEs by $+1.5\dB$, and the W4 in-FOV by
-$+2.3\dB$.
+Within-session RMSE values cannot be read as straightforward generalization estimates: \texttt{signal\_power} is spatially autocorrelated, and the held-out region rows are typically only a few meters away from the nearest training rows. The S1 semivariogram (Fig.~\ref{fig:semivariogram}) has empirical range $\approx 20$\,m, while the $K$-means regions span 5--13\,m on a side, so training rows up to $\sim$10\,m from any held-out region row are spatially correlated with the test set. 
 
-The contamination affects the LiDAR-free W2 baseline and the
-LiDAR-augmented W4 model similarly within a fold, so the
-\emph{contrast} $\dlidarw$ is not inflated by spatial autocorrelation
-alone. More notably, the buffer-zone correction on R-4 \emph{shrinks}
-its in-FOV $\dlidarw$ from $+1.09\dB$ to $-1.27\dB$: the contrast
-moves in the direction unfavourable to the LiDAR model.
-
-%-------------------------------------------------------------------- 6.4
-\subsection{R-4 robustness diagnostic}
-We test R-4's nominal $+1.09\dB$ in-FOV $\dlidarw$ under four
-deployment-relevant corrections (Table~\ref{tab:r4-diag}). The buffer
-correction alone gives $\dlidarw = -1.27\dB$, indicating that the
-LiDAR model was relying on training rows in the spatial neighbourhood
-of the held-out region to fit patterns that do not generalize when
-those rows are removed. The depth-4 hyperparameter swap alone gives
-$\dlidarw = -0.33\dB$, indicating that the H0 (depth-6) trees
-over-fit LiDAR features which depth-4 trees correctly ignore. Joint
-application of buffer and depth-4 gives $\dlidarw = -0.83\dB$: the two
-corrections compound in the same direction rather than cancelling each
-other out, ruling out the alternative interpretation that they
-correct for opposing biases.
-
-\begin{table}[!t]
-\caption{R-4 four-correction robustness diagnostic. In-FOV $\dlidarw$
-(dB). The R-4 nominal $+1.09\dB$ does not survive any correction; the
-joint correction confirms the two individual corrections compound. The
-permutation row reports the within-session-shuffled-LiDAR fit; its
-matched real-LiDAR fit gives $\dlidarw = +1.11\dB$, so the gap between
-the two is $0.98\dB$, exceeding the 0.5\,dB tolerance (see prose).}
-\label{tab:r4-diag}
-\centering
-\renewcommand{\arraystretch}{1.1}
-\setlength{\tabcolsep}{3pt}
-\footnotesize
-\begin{tabular}{l l r}
-\toprule
-Correction & probes & in-FOV $\dlidarw$ \\
-\midrule
-none (main run)            & ---                                  & $+1.09$ \\
-1-m buffer                 & spatial autocorrelation              & $-1.27$ \\
-depth-4 (H1)               & tree-depth over-fitting              & $-0.33$ \\
-depth-4 + buffer           & both, simultaneously                 & $-0.83$ \\
-LiDAR permutation          & row-aligned vs.\ marginal LiDAR      & $+0.13$ \\
-\bottomrule
-\end{tabular}
-\vspace{-0.6em}
-\end{table}
-
-The within-session LiDAR-feature permutation control (last row of
-Table~\ref{tab:r4-diag}) deserves a careful reading. We re-train W4 on
-R-4 with the 19 ego-frame LiDAR columns block-shuffled (the
-within-session counterpart of the cross-session control in
-Section~\ref{sec:cs-perm}). The shuffled-feature
-$\dlidarw = +0.13\dB$, while the matched real-LiDAR
-$\dlidarw = +1.11\dB$. The 0.98\,dB gap exceeds the 0.5\,dB tolerance:
-R-4's H0 no-buffer fit \emph{does} contain a small genuine
-row-aligned LiDAR signal, and we report this signal explicitly rather
-than pooling it into the negative result. However, this signal is
-contingent on training data spatially adjacent to the test region (it
-disappears under the 1-m buffer) and on tree depth $\ge 6$ (it
-disappears under depth-4 trees). Under any of the three
-deployment-relevant corrections --- buffer alone, depth-4 alone, or
-their joint application --- $\dlidarw$ falls below the $+1\,$dB
-threshold. The negative deployment-relevant claim therefore holds,
-with explicit acknowledgement that R-4 contains a small genuine but
-non-deployment-generalizing LiDAR signal.
-
-%-------------------------------------------------------------------- 6.5
-\subsection{Best-case within-session prediction accuracy}
-The combination of corrections that produces the most defensible
-deployment-relevant estimate --- depth-4 hyperparameters with R-4 as
-the held-out region, in the in-FOV stratum --- gives the LiDAR-free
-W2 model an RMSE of $1.99\dB$ on \texttt{signal\_power}. The 15
-features of W2 are AGV position $(x_m, y_m)$, eight telemetry
-features, and five AP-relative features. The full 34-feature W4 model
-on the same fold and stratum has an RMSE of $2.33\dB$. Both numbers
-sit approximately 3\,dB below the 0.5-m position-binning noise floor
-of 4.95\,dB (Section~\ref{sec:noisefloor}), so the model's predictive
-power is exclusively explained by sub-cell information --- position at
-sensor resolution, telemetry, and AP-relative geometry --- rather
-than by coarse spatial binning. LiDAR features cannot contribute
-information that is not already encoded by the 15-feature stack.
-
-%==========================================================================
-\section{Feature Attribution Analysis}\label{sec:shap}
-%==========================================================================
-
-We complement the ablation-based analysis with a model-internal view
-using TreeSHAP. The cross-session B5 fits and the within-session R-3
-W4 fit are analysed; R-3 is chosen for the within-session view
-because its overall RMSE of $4.57\dB$ is within $1\dB$ of the median
-across the five within-session folds, so its attribution patterns are
-representative rather than dominated by an outlier.
-
-\subsection{Group importance}
-The cumulative $|\mathrm{SHAP}|$ over the features in each group is
-dominated by the AP-relative group on every fit
-(Fig.~\ref{fig:shap-groups}). On the cross-session folds, AP-relative
-contributes $5.6$--$8.0$ in cumulative $|\mathrm{SHAP}|$ (5 features;
-per-feature $1.1$--$1.6$), whereas the LiDAR sectoral group
-contributes $0.8$--$1.7$ across 14 features (per-feature
-$0.06$--$0.12$). On the within-session R-3 W4 fit the contrast is
-similar: AP-relative cumulative $|\mathrm{SHAP}|$ is $5.6$ over $5$
-features against $1.5$ over $14$ for LiDAR sectoral --- a
-ten-fold ratio in per-feature contribution. The ordering is
-consistent with the ablation evidence in
-Sections~\ref{sec:cross-session} and~\ref{sec:within-session}.
-
-% TODO: figure showing SHAP feature group importance per fold
-\begin{figure}[!t]
-\centering
-% \includegraphics[width=\columnwidth]{figs/shap_group_importance.pdf}
-\fbox{\parbox[c][2.5cm][c]{0.92\columnwidth}{\centering\itshape
-[Placeholder Fig.~\ref{fig:shap-groups}: Mean $|\mathrm{SHAP}|$ per
-feature group, per cross-session fold.]}}
-\caption{SHAP feature-group importance per cross-session fold.}
-\label{fig:shap-groups}
-\vspace{-0.8em}
+\vspace{-5pt}
+\begin{figure}[!htbp]
+    \centering
+    \includegraphics[width=0.7\columnwidth]{docs/paper/img/semivariogram_per_session.png}
+    \vspace{-5pt}
+    \caption{Empirical semivariogram of \texttt{signal\_power} per session.
+    The lag $h$ is the Euclidean distance between a pair of AGV $(x_m, y_m)$  positions. The $\gamma(h) = \tfrac{1}{2N(h)}\sum_{(i,j)\in\mathcal{P}(h)}\bigl(s_i - s_j\bigr)^2$ is half the mean squared difference of \texttt{signal\_power} over all row pairs whose distance falls in the bin $h\pm0.25$.
+}
+    \label{fig:semivariogram}
 \end{figure}
 
-\subsection{Sign-of-effect consistency across folds}
-We compute the Spearman correlation between each feature's value and
-its SHAP value, per fold, and flag a feature as sign-consistent if
-$|\rho| > 0.05$ with the same sign on all three cross-session folds.
-Three of the four AP-relative features pass this test
-(\texttt{dist\_to\_AP}, \texttt{sin\_AP},
-\texttt{cos\_AP}); only \texttt{clutter\_frac\_toward\_AP}
-flips sign across folds. Among the 19 LiDAR features, only four pass
-(\texttt{mean\_dist\_mm}, \texttt{dist\_p90\_mm},
-\texttt{mean\_dist\_sector\_6\_mm},
-\texttt{mean\_dist\_sector\_7\_mm}). The asymmetry --- $75\%$ of
-AP-relative features against $21\%$ of LiDAR features --- is
-informative: AP-relative features encode a transferable physical
-relationship that the gradient-boosted model picks up consistently
-across folds, whereas the LiDAR-derived environmental geometry does
-not, on this dataset.
+To bound the magnitude of this contamination, we apply a \textbf{buffer-zone test} on R-1: dropping all training rows within 1\,m of any held-out R-1 row inflates the in-FOV RMSE by $+10.21\dB$ on W0, $+10.29\dB$ on W1, $+5.63\dB$ on W2, and $+13.86\dB$ on W4. The contamination affects the LiDAR-free W2 baseline and the LiDAR-augmented W4 model differently within a fold, so the absolute RMSEs are fold-conditional rather than deployment-grade generalization estimates; the $\dlidarw$ contrast is, however, taken between models trained and tested on the same row partition, so it is not inflated by spatial autocorrelation alone. The buffer-zone correction on R-4 (Table~\ref{tab:r4-diag}) shifts $\dlidarw$ from $-1.63\dB$ (no buffer) to $-0.01\dB$ (1-m buffer): the contrast moves toward zero, never above it, under the deployment-grade buffer correction.
 
-\subsection{Spatial maps}
-Plotting the per-cell dominant feature group in $(x_m, y_m)$ shows
-that AP-relative and position together cover most of the AGV
-trajectory on every fold; LiDAR sectoral never dominates a
-contiguous spatial region. This is the per-cell counterpart of the
-group-importance result above and provides a direct visual
-confirmation.
+\subsection{R-4 robustness diagnostic}
+R-4 is the smallest fold in row count, which means that it is the most exposed to spatial autocorrelation and is the fold where any latent LiDAR contribution would be most likely to surface under a relaxed-overfitting hyperparameter swap. Table~\ref{tab:r4-diag} reports R-4's in-FOV $\dlidarw$ under diagnostic corrections and the LiDAR-feature permutation control. 
 
-%==========================================================================
-\section{Discussion}\label{sec:discussion}
-%==========================================================================
+\vspace{-6pt}
+\begin{table}[!htbp]
+    \caption{R-4 robustness and LiDAR permutation diagnostic (in-FOV)}
+    \label{tab:r4-diag}
+    \centering
+    \setlength{\tabcolsep}{3pt}
+    \footnotesize
+    \begin{tabularx}{\columnwidth}{l X r}
+        \toprule
+        Correction & probes & $\dlidarw$ (dB) \\
+        \midrule
+        none (H0 main run) & --- & $-1.63$ \\
+        1-m buffer & spatial autocorrelation  & $-0.01$ \\
+        depth-4 (H1) & tree-depth overfitting & $+0.60$ \\
+        depth-4 + buffer & both, simultaneously & $-0.64$ \\
+        \midrule
+        LiDAR permutation (H0) & row-aligned vs.\ marginal & $+0.24$ \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
 
-%-------------------------------------------------------------------- 7.1
-\subsection{Why the negative result is informative}
-Industrial WiFi propagation is governed by waveguiding through
-corridors and constructive/destructive multipath at scales much larger
-than typical LiDAR feature scales~\cite{cena2025wifi}. The negative
-result is consistent with this picture: ego-frame LiDAR features over
-the empirical 222$^{\circ}$ valid sector capture local geometry on
-the metre scale, but the dominant propagation effects in the workspace
-operate over distances substantially larger than the LiDAR's
-sensitivity range and are not localized to the AGV's immediate
-surroundings. AP-relative geometry derived from surveyed AP
-coordinates, by contrast, encodes the global physical relationship
-between AGV and AP that the gradient-boosted model can exploit
-directly. The SHAP attribution analysis (Section~\ref{sec:shap})
-supports this reading: AP-relative features dominate the model's
-predictions across every fold, and the per-feature contribution of
-LiDAR sectoral features is the smallest of any group.
+Across the four corrections, $\dlidarw$ stays below the $+1\,$dB threshold throughout, and only the H1 single-correction exceeds zero. 
+The within-session LiDAR-feature permutation control retrains W4 on R-4 with the 19 ego-frame LiDAR columns block-shuffled within session, preserving their marginal and joint distributions but destroying row-level alignment with the target. The shuffled-feature $\dlidarw = +0.24\dB$, while the matched real-LiDAR $\dlidarw = -0.01\dB$ on the same training/validation partition. The shuffled fit achieves a marginally larger nominal contribution than the real fit. R-4's H0 fit therefore does not contain row-aligned LiDAR information beyond the marginal distributions of the LiDAR features. Combined with the four-correction diagnostic, R-4 supports the within-session negative result: no configuration produces a $\dlidarw$ that is both above the $+1\,$dB threshold and survives a deployment-relevant correction.
 
-%-------------------------------------------------------------------- 7.2
-\subsection{Deployment guidance}
-Operators with surveyed AP coordinates can predict
-\texttt{signal\_power} at sub-2-dB within-session RMSE using a
-15-feature stack: $(x_m, y_m)$ + 8 telemetry features + 5 AP-relative
-features. The model is XGBoost with depth-4, $\eta=0.05$,
-$\lambda=1.0$, $n_\text{est}=2000$, early-stop $= 100$; anomaly
-handling is a single threshold $T^{\star} = 35$ on
-\texttt{nns\_position\_confidence}. LiDAR-derived environment features
-need not be in the stack: not for cross-session generalization (LiDAR
-removable on every fold), and not for within-session generalization
-under proper testing (no fold's nominal LiDAR boost survived a
-deployment-relevant correction). The operator can therefore skip
-LiDAR sensor-fusion engineering for link-quality prediction, the
-sectoral feature pipeline, and in-FOV/out-of-FOV stratified models
-with LiDAR-derived FOV. None added value over the 15-feature
-AP-aware baseline in this deployment scenario.
+The combination of corrections that produces the most defensible deployment-relevant estimate is the LiDAR-free W2 model with the depth-4 hyperparameters and R-4 held-out region, producing an RMSE of $3.96\dB$ on \texttt{signal\_power}  in the in-FOV stratum. The 10 features of W2 are AGV position $(x_m, y_m)$, three telemetry features, and five AP-relative features. The full 29-feature W4 model on the same fold and stratum achieves an RMSE of $3.36\dB$, nominally $0.60\dB$ lower (consistent with the H1-no-buffer row of Table~\ref{tab:r4-diag}); the gap does not survive the 1-m buffer correction. Both numbers sit approximately 1\,dB below the 0.5-m position-binning noise floor of 4.95\,dB (Section~\ref{sec:noisefloor}), so the model's predictive power is exclusively explained by sub-cell information (position at sensor resolution, telemetry, and AP-relative geometry) rather than by coarse spatial binning. LiDAR features cannot contribute robust deployment-relevant information beyond what the 10-feature stack already encodes.
 
-%-------------------------------------------------------------------- 7.3
-\subsection{Limitations}\label{sec:limitations}
-Several limitations bound the scope of this paper's claims.
-\textit{Single facility, single AP, three sessions.} The experiments
-are conducted on one AGV in one industrial facility, across three
-routes (one in a different sub-area); cross-facility replication is
-left to future work. \textit{Single front LiDAR.} The AGV has a
-single front-facing 270$^{\circ}$ LiDAR (1{,}350 active beams,
-222$^{\circ}$ empirical valid sector), whereas production AGVs
-typically carry front+rear LiDARs; the in-FOV stratum used
-throughout is the dual-LiDAR-equivalent lower bound, and the negative
-result holds in both strata. \textit{Spatial autocorrelation.} The
-S1 semivariogram range ($\approx 20$\,m) is comparable to the
-within-session region size and a 1\,m buffer does not fully
-decorrelate, so the absolute within-session RMSE values within a
-fold should be read as fold-conditional rather than as
-deployment-grade generalization estimates --- though the
-$\dlidarw$ contrast is not inflated by this alone
-(Section~\ref{sec:within-session}-C). \textit{Hyperparameter
-dependence.} The H0 depth-6 trees over-fit on some folds (notably
-R-1, where depth-4 improves overall RMSE by 4.76\,dB); the cleanest
-deployment-relevant numbers come from depth-4. The negative result
-holds under all hyperparameter configurations tested but is more
-decisive at depth-4. \textit{SHAP is descriptive, not causal.} The
-SHAP analyses describe the trained models' learned relationships,
-not underlying physical causes.
-\textit{Single-threshold anomaly handling.} The histogram-saddle
-threshold $T^{\star} = 35$ is applied uniformly across the three
-sessions; per-session adaptive thresholds were not evaluated.
 
-%==========================================================================
-\section{Conclusion}\label{sec:conclusion}
-%==========================================================================
+\section{Feature Attribution Analysis}
+\label{sec:shap}
 
-This paper presented a use case study testing whether LiDAR-derived
-environmental geometry can augment WiFi signal-strength prediction on
-industrial AGVs beyond what AP-relative features achieve alone. The
-study used cross-session and within-session generalization protocols
-on 681{,}593 matched LiDAR--telemetry pairs from three data-gathering
-sessions covering three routes. Across the experiments --- spanning
-cross-session generalization, hyperparameter sensitivity, framework
-sensitivity, within-session generalization with spatial and
-over-fitting controls, and LiDAR-feature permutation controls ---
-ego-frame LiDAR features did not improve on a 15-feature baseline of
-position, telemetry, and AP-relative geometry derived from surveyed
-AP coordinates. The F1-fold in-FOV ablation effect is
-$-0.52\dB$ under the H0 configuration and lies in
-$[-1.90, -0.29]\dB$ across six XGBoost configurations, with LightGBM
-cross-checks confirming that the result is not framework-specific.
-The cleanest within-session LiDAR-free model achieves an RMSE of
-$1.99\dB$ on \texttt{signal\_power}, approximately 3\,dB below the
-dataset's 0.5-m position-binning noise floor. The contributions are
-(i) a controlled empirical study of LiDAR-augmented WiFi signal
-strength prediction in this deployment scenario, (ii) a feature-group
-ablation procedure, and (iii) practical deployment guidance for
-industrial AGV operators: when AP coordinates are surveyed, ego-frame
-LiDAR features were not required for sub-2-dB within-session
-prediction in the studied scenario. Future work includes
-cross-facility replication, dual-LiDAR coverage, and pose-uncertainty
-modelling.
+We complement the ablation-based analysis with a model-internal view using TreeSHAP. The cross-session B5 fits and the within-session R-3 W4 fit are analyzed.
+The cumulative $|\mathrm{SHAP}|$ over the features in each group is dominated by the AP-relative group on every fit (Fig.~\ref{fig:shap-groups}). On the cross-session folds, AP-relative contributes $6.7$--$7.7$ in cumulative $|\mathrm{SHAP}|$ across 5 features (per-feature $1.3$--$1.5$), whereas the LiDAR sectoral group contributes $1.4$--$2.0$ across 14 features (per-feature $0.10$--$0.14$). On the within-session R-3 W4 fit the AP-relative group cumulative is $6.3$ over 5 features (per-feature $1.26$) against $2.8$ over 14 for LiDAR sectoral (per-feature $0.20$). The ordering is consistent with the ablation evidence in Sections~\ref{sec:cross-session} and~\ref{sec:within-session}.
 
-%==========================================================================
+\vspace{-4pt}
+\begin{figure}[!htbp]
+    \centering
+    \includegraphics[width=\columnwidth]{docs/paper/img/shap_group_importance.png}
+    \caption{SHAP feature group importance per cross-session fold (cumulative $|\mathrm{SHAP}|$ in dB).}
+    \label{fig:shap-groups}
+    \vspace{-2pt}
+\end{figure}
+
+We compute the Spearman correlation between each feature's value and its SHAP value, per cross-session fold, and flag a feature as sign-consistent if $|\rho| > 0.05$ with the same sign on all three cross-session folds. Of the four continuous AP-relative features tested, three pass (\texttt{dist\_to\_AP}, \texttt{sin\_AP}, \texttt{cos\_AP}); \texttt{clutter\_frac\_toward\_AP} fails (the F2 fold gives an opposite sign to F1 and F3). The binary \texttt{is\_AP\_in\_FOV} is excluded from the rank test. Among the 19 LiDAR features (5 scalar + 14 sectoral), 5 pass (\texttt{mean\_dist\_mm}, \texttt{clutter\_frac}, \texttt{mean\_dist\_sector\_3\_mm}, \texttt{mean\_dist\_sector\_6\_mm}, \texttt{clutter\_frac\_sector\_4}). Among the 3 telemetry features, 1 passes (\texttt{speed\_mps}). The asymmetry --- $3/4$ AP-relative against $5/19$ LiDAR --- is informative: AP-relative features encode a transferable physical relationship that the gradient-boosted model picks up consistently across folds, whereas the LiDAR-derived environmental geometry does not, on this dataset.
+Plotting the per-cell dominant feature group in $(x_m, y_m)$ shows that AP-relative and position together cover most of the AGV trajectory on every fold; LiDAR sectoral never dominates a contiguous spatial region. This is the per-cell counterpart of the group-importance result above.
+
+
+\section{Discussion}
+\label{sec:discussion}
+
+The results on the gathered dataset indicate that the dominant propagation effects in the workspace operate over distances substantially larger than the LiDAR's sensitivity range and are not localized to the AGV's immediate surroundings. 
+The negative result is consistent with the fact that industrial Wi\nobreakdash-Fi propagation is governed by waveguiding through corridors and constructive/destructive multipath at scales much larger than typical LiDAR feature scales~\cite{cena2025wifi}. 
+The SHAP attribution analysis (Section~\ref{sec:shap}) supports this reading: AP-relative features dominate the model's predictions across every fold, and the per-feature contribution of LiDAR sectoral features is the smallest of any group.
+
+The 10-feature stack ($x_m, y_m$ + 3 telemetry features + 5 AP-relative features) achieves an RMSE of $3.96\dB$ on \texttt{signal\_power} in the within-session LRO evaluation under depth-4 hyperparameters --- approximately 1\,dB below the 0.5-m position-binning noise floor of 4.95\,dB.  LiDAR-derived environment features did not contribute to either cross-session generalization (LiDAR removable on the F1 and F2 folds; F3's nominal positive diagnosed as marginal-distribution-driven) or within-session generalization under proper testing (no fold's $\dlidarw$ both cleared the threshold and survived a deployment-relevant correction). For the studied deployment scenario, the LiDAR sensor-fusion engineering effort did not add value over the 10-feature AP-aware baseline.
+
+The finding is conditional on the experimental design: a closed-loop trajectory, a single fixed AP per session, and summary-statistic LiDAR features. Under these conditions $(x_m, y_m)$ and AP-relative geometry are highly informative on their own, leaving little residual variance for LiDAR-derived features --- which are themselves functions of position --- to explain. The result is limited to the utilized deployment and is not a universal statement about LiDAR--Wi\nobreakdash-Fi fusion.
+
+Several \textbf{limitations} bound the scope of this paper's claims:
+\begin{itemize}
+    \item \textit{Single facility, single AP, three sessions.} The experiments are conducted on one AGV in one facility, across three routes. 
+    \item \textit{Single front LiDAR.} The AGV has a single front-facing 270$^{\circ}$ LiDAR (222$^{\circ}$ empirical valid sector), whereas production AGVs typically carry front+rear LiDARs. The in-FOV stratum used in the paper is the dual-LiDAR-equivalent, and the negative result holds in both strata. But this does not fully substitute for dual-LiDAR coverage, since a rear LiDAR observes geometry behind the AGV not represented in any forward-only feature.
+    \item \textit{Single independently aligned reference frame.} F3's nominal $+1\dB$ $\Delta_\mathrm{LiDAR}$ is diagnosed as marginal-distribution-driven (Section~\ref{sec:f3-diag}). A definitive evaluation requires additional sessions on independently mapped routes.
+    \item \textit{Closed-loop trajectory.} All sessions follow predefined AGV routes traversed in a closed loop, with no free-roaming exploration.
+    \item \textit{AP fixed within each session.} Each session uses a single stationary AP, so AP-relative geometry alone captures most signal variance attributable to global geometry.
+    \item \textit{Spatial autocorrelation.} The S1 semivariogram range ($\approx 20$\,m) is comparable to the within-session region size and a 1\,m buffer does not fully decorrelate, so the absolute within-session RMSE values within a fold should be read as fold-conditional rather than as deployment-grade generalization estimates. 
+\end{itemize}
+
+Four experimental directions would relax the position-redundancy condition under which LiDAR-derived features cannot earn their keep:
+(i) \textit{environmental reconfiguration} between repetitions of the same loop --- moving pallets, opening or closing doors --- holding $(x_m, y_m)$ constant while changing multipath geometry;
+(ii) \textit{AP placement varied across sessions} in the same map, decoupling signal from absolute location;
+(iii) \textit{multi-AP infrastructures with simultaneous measurements}, isolating the directional contribution of LiDAR features per AP within a shared scan;
+(iv) \textit{open-trajectory or space-filling exploration} in place of closed-loop traversal, reducing the spatial redundancy that makes position informative on its own.
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+This paper presents a use-case study that tests whether LiDAR-derived environmental geometry can improve Wi\nobreakdash-Fi signal strength prediction for industrial AGVs over what AP-relative features alone achieve. The study used cross-session and within-session generalization protocols on 681{,}593 matched LiDAR--telemetry pairs from three data-gathering sessions covering three routes. Across the experimental configurations tested, ego-frame LiDAR features did not contribute robust value over a 10-feature baseline of position, telemetry, and AP-relative geometry derived from surveyed AP coordinates. A single nominal positive ($+1.20\dB$, on the cross-session fold trained and tested across independently-aligned coordinate reference frames) was diagnosed by a LiDAR-feature permutation control as marginal-distribution-driven rather than row-aligned LiDAR signal. The lowest-RMSE within-session LiDAR-free model achieves an RMSE of $3.96\dB$ on \texttt{signal\_power}, approximately 1\,dB below the dataset's 0.5-m position-binning noise floor. The contributions are (i) a controlled empirical study of LiDAR-augmented Wi\nobreakdash-Fi signal strength prediction in this deployment scenario, (ii) a feature group ablation procedure, and (iii) the identification of a minimal 10-feature set that achieves sub-noise-floor within-session prediction in the studied scenario. Future work includes cross-facility replication, dual-LiDAR coverage, additional sessions on independently-aligned reference frames, and pose-uncertainty modeling.
+
+
 \section*{Acknowledgment}
-%==========================================================================
-% TODO: confirm grant numbers
-Co-funded by the European Union HORIZON TMA MSCA Doctoral Networks /
-HORIZON-MSCA-2023-DN-01 / project TUAI / grant agreement
-N\textdegree~101168344. Views and opinions expressed are those of the
-author(s) only and do not necessarily reflect those of the European
-Union or European Research Executive Agency. Neither the European
-Union nor the granting authority is responsible for them. Co-funded
-by the Statutory Research funds of the Department of Distributed
-Systems and Informatic Devices, Silesian University of Technology,
-Gliwice, Poland (Grants BK-244/RAu8/2025 02/110/BK 25/1036).
+Co-funded by the European Union HORIZON TMA MSCA Doctoral Networks / HORIZON-MSCA-2023-DN-01 / project TUAI / grant agreement N° 101168344. Views and opinions expressed are however those of the author(s) only and do not necessarily reflect those of the European Union or European Research Executive Agency.  Neither the European Union nor the granting authority can be held responsible for them. Co-funded by the Statutory Research funds of the Department of Distributed Systems and Informatic Devices, Silesian University of Technology, Gliwice, Poland (Grants BK-244/RAu8/2025 02/110/BK\_25/1036).
 
-%==========================================================================
+During the preparation of this work, the authors used \textit{Anthropic Claude Opus 4.7} for proofreading, text readability improvement, and partial code generation. After using this tool, the authors reviewed and edited the content as needed and take full responsibility for the content of the publication.
+
+
 \bibliographystyle{IEEEtran}
 \bibliography{ref}
 
