@@ -23,6 +23,11 @@ scripts/             Analysis and data-preparation code.
   initial_analysis/            Descriptive analysis of joint_coverage.parquet.
   time_sync/                   Per-day clock-offset calibration pipeline.
 
+examples/            Shareable, self-contained code examples.
+  read_lidar_h5.py             How to read the raw LiDAR .h5 captures (schema, beam
+                               geometry, quirks); depends only on numpy + h5py.
+  validate_read_lidar_h5.py    Checks the example and its documented facts against data/.
+
 docs/                Generated reports and the paper draft.
   initial_dataset_analysis/    report.md / report.pdf + figures.
   time_sync/                   report.md / report.pdf + figures.
